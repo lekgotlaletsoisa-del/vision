@@ -1,0 +1,43 @@
+[Unit]
+Description=Vision Lab OpenCV Application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vision-app
+Group=vision-app
+WorkingDirectory=/opt/vision
+ExecStart=/usr/bin/java -Xms64m -Xmx768m -Djava.awt.headless=true -Duser.home=/var/lib/vision -Dorg.bytedeco.javacpp.cachedir=/var/cache/vision/javacpp -jar /opt/vision/vision.jar
+Environment=SERVER_ADDRESS=127.0.0.1
+Environment=SERVER_PORT=8090
+Environment=SERVER_FORWARD_HEADERS_STRATEGY=framework
+StateDirectory=vision
+StateDirectoryMode=0700
+CacheDirectory=vision
+CacheDirectoryMode=0700
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

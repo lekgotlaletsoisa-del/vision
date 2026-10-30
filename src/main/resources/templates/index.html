@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-bs-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vision Lab</title>
+  <meta name="theme-color" content="#087f69">
+  <link rel="icon" type="image/svg+xml" th:href="@{/favicon.svg(v=1)}">
+  <link rel="icon" type="image/png" sizes="32x32" th:href="@{/favicon-32x32.png(v=1)}">
+  <link rel="icon" type="image/x-icon" sizes="16x16 32x32 48x48 64x64 256x256" th:href="@{/favicon.ico(v=1)}">
+  <link rel="apple-touch-icon" sizes="180x180" th:href="@{/apple-touch-icon.png(v=1)}">
+  <link rel="stylesheet" th:href="@{/vendor/bootstrap-5.3.8.min.css}">
+  <link rel="stylesheet" th:href="@{/css/vision.css(v=6)}">
+  <script defer th:src="@{/js/vision.js(v=6)}"></script>
+</head>
+<body>
+<header class="lab-header">
+  <div class="container-fluid lab-width"><a class="brand" th:href="@{/}"><img class="brand-symbol" th:src="@{/favicon.svg(v=1)}" width="34" height="34" alt=""> Vision Lab</a></div>
+</header>
+<main class="container-fluid lab-width py-4">
+  <h1 class="visually-hidden">Vision Lab image processing</h1>
+  <div class="row g-4">
+    <aside class="col-12 col-lg-3">
+      <form id="process-form" class="card controls-card" th:action="@{/api/vision/process}" method="post" enctype="multipart/form-data"
+            th:attr="data-max-bytes=${limits.maxUploadBytes()},data-max-pixels=${limits.maxPixels()}">
+        <div class="card-body p-4">
+          <button class="btn btn-outline-success w-100 camera-button" type="button" id="camera-button">Take photo</button>
+          <details class="advanced-controls mt-3 mb-4">
+            <summary>Or upload an image</summary>
+            <label class="visually-hidden" for="image">Upload a JPEG or PNG</label>
+            <input class="form-control form-control-sm mt-2" type="file" id="image" name="image" accept="image/jpeg,image/png" aria-describedby="upload-help">
+            <p id="upload-help" class="small text-secondary mt-2 mb-0">JPEG / PNG · <span th:text="${limits.maxUploadBytes() / 1048576}">10</span> MiB max</p>
+          </details>
+          <label for="cannyLow" class="control-label">Canny low <output for="cannyLow" id="low-value" th:text="${defaults.cannyLow()}">50</output></label>
+          <input class="form-range" type="range" id="cannyLow" name="cannyLow" min="0" max="254" step="1" th:value="${defaults.cannyLow()}">
+          <label for="cannyHigh" class="control-label mt-3">Canny high <output for="cannyHigh" id="high-value" th:text="${defaults.cannyHigh()}">150</output></label>
+          <input class="form-range" type="range" id="cannyHigh" name="cannyHigh" min="1" max="255" step="1" th:value="${defaults.cannyHigh()}">
+          <details class="advanced-controls mt-3">
+            <summary>More controls</summary>
+            <label for="minContourArea" class="form-label control-label mt-3">Minimum area <span class="unit">px²</span></label>
+            <input class="form-control" type="number" id="minContourArea" name="minContourArea" min="0" max="16000000" step="any" th:value="${defaults.minContourArea()}" required>
+            <label for="blurKernel" class="form-label control-label mt-3">Blur kernel</label>
+            <input class="form-control" type="number" id="blurKernel" name="blurKernel" min="1" max="31" step="2" th:value="${defaults.blurKernel()}" required aria-describedby="blur-help">
+            <p class="small text-secondary mt-2 mb-0" id="blur-help">Odd values from 1–31.</p>
+          </details>
+          <button type="submit" class="btn btn-primary w-100 mt-4" id="process-button"><span id="process-spinner" class="spinner-border spinner-border-sm me-2" hidden aria-hidden="true"></span><span id="process-label">Process image</span></button>
+        </div>
+      </form>
+    </aside>
+    <section class="col-12 col-lg-9" aria-label="Processing results" id="results" aria-busy="false">
+      <article class="card preview-card">
+        <div class="preview-toolbar">
+          <fieldset class="overlay-controls">
+            <legend class="visually-hidden">Show overlays</legend>
+            <label><input class="form-check-input" type="checkbox" id="show-edges" checked><span class="legend-dot edges-dot" aria-hidden="true"></span>Edges</label>
+            <label><input class="form-check-input" type="checkbox" id="show-contours" checked><span class="legend-dot contours-dot" aria-hidden="true"></span>Contours</label>
+          </fieldset>
+          <span class="contour-count" id="contour-count" aria-live="polite"></span>
+          <a id="full-size-link" class="full-size-link" target="_blank" rel="noopener" hidden>Open image ↗</a>
+        </div>
+        <div class="image-stage">
+          <p class="image-placeholder" id="image-placeholder">Take a photo to begin.</p>
+          <img id="preview-image" alt="Source photograph" hidden>
+        </div>
+        <div id="status" role="status" aria-live="polite" class="status-message">Ready.</div>
+      </article>
+      <details class="card measurements-card mt-3" id="measurements-details">
+        <summary>Measurements <span>px / px²</span></summary>
+        <div class="table-responsive"><table class="table align-middle mb-0"><caption class="visually-hidden">Contour geometry in original image pixels</caption><thead><tr><th scope="col">ID</th><th scope="col">Area <small>px²</small></th><th scope="col">Perimeter <small>px</small></th><th scope="col">Centre <small>(X, Y)</small></th><th scope="col">Bounds <small>X, Y / W × H</small></th><th scope="col">Rotated box <small>W × H / centre</small></th><th scope="col">Angle <small>°</small></th></tr></thead><tbody id="measurements-body"><tr><td colspan="7" class="empty-table">No results yet.</td></tr></tbody></table></div>
+      </details>
+      <noscript><div class="alert alert-warning mt-3">Enable JavaScript to process images.</div></noscript>
+    </section>
+  </div>
+</main>
+<dialog class="camera-dialog" id="camera-dialog" aria-labelledby="camera-title">
+  <div class="camera-dialog-header">
+    <h2 id="camera-title">Take photo</h2>
+    <button type="button" id="camera-close" class="camera-close" aria-label="Close camera">×</button>
+  </div>
+  <video id="camera-video" autoplay muted playsinline aria-label="Camera preview"></video>
+  <p id="camera-status" class="camera-status" role="status" aria-live="polite">Opening camera…</p>
+  <div class="camera-dialog-footer">
+    <button type="button" id="camera-shutter" class="camera-shutter" aria-label="Capture and process photo" disabled><span aria-hidden="true"></span></button>
+    <span>Capture &amp; process</span>
+  </div>
+</dialog>
+</body>
+</html>
