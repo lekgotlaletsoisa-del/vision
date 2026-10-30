@@ -2,9 +2,9 @@
 
 Vision Lab is a Java laboratory for studying OpenCV edge detection, external contours and image geometry. Capture a single camera frame in the page or upload an existing image, then view edges and contours directly over the photograph. Optional measurements remain available below the image. This phase does not classify objects, use machine learning, continuously process camera frames or control sewing hardware.
 
-## Private repository
+## Repository
 
-Source control is hosted at **https://github.com/lekgotlaletsoisa-del/vision** with **private** visibility. Keep the repository private; access is managed through the owner's GitHub account. The repository contains source, tests, static assets, Maven configuration and the deployment templates for this host. Build output, local environment files, private keys and logs are excluded by `.gitignore`. Production authentication databases, secrets, certificates and captured images are not part of source control.
+Source control is publicly available at **https://github.com/lekgotlaletsoisa-del/vision**. The repository contains source, tests, static assets, Maven configuration and the deployment templates for this host. Build output, local environment files, private keys and logs are excluded by `.gitignore`. Production authentication databases, secrets, certificates and captured images are not part of source control.
 
 The main branch is `main`. Before committing changes, update the affected README/API documentation, run the Maven verification and Javadoc commands below, and run the camera regression checks for frontend changes. Commit and push only when requested. After pushing an approved change, use `./deploy/deploy.sh` to update the configured service and verify readiness through the established deployment workflow.
 
