@@ -44,6 +44,16 @@ class VisionApiTests {
                 .andExpect(jsonPath("$.parameters.cannyLow").value(50))
                 .andExpect(jsonPath("$.contours[0].area").isNumber())
                 .andExpect(jsonPath("$.contours[0].rotatedRectangle.vertices", hasSize(4)))
+                .andExpect(jsonPath("$.parameters.boundary.mode").value("CANNY"))
+                .andExpect(jsonPath("$.parameters.filters.excludeBoundary").value(false))
+                .andExpect(jsonPath("$.contours[0].aspectRatio").isNumber())
+                .andExpect(jsonPath("$.contours[0].circularity").isNumber())
+                .andExpect(jsonPath("$.contours[0].solidity").isNumber())
+                .andExpect(jsonPath("$.contours[0].extent").isNumber())
+                .andExpect(jsonPath("$.contours[0].touchesImageBoundary").value(false))
+                .andExpect(jsonPath("$.contours[0].orientationAxis.start.x").isNumber())
+                .andExpect(jsonPath("$.contourDrawings[0].path").value(startsWith("M")))
+                .andExpect(jsonPath("$.boundaryMaskImage").value(startsWith("data:image/png;base64,")))
                 .andExpect(jsonPath("$.previewWidth").value(240))
                 .andExpect(jsonPath("$.previewHeight").value(200))
                 .andExpect(jsonPath("$.originalImage").value(startsWith("data:image/jpeg;base64,")))
@@ -77,9 +87,38 @@ class VisionApiTests {
     void numericBindingAndValidationErrorsAreJson() throws Exception {
         for (String[] control : new String[][]{{"cannyLow", "NaN"}, {"cannyHigh", "Infinity"},
                 {"blurKernel", "4"}, {"blurKernel", "text"}, {"minContourArea", "-1"},
-                {"cannyLow", "200"}}) {
+                {"cannyLow", "200"}, {"maxContourArea", "50"}, {"maxAspectRatio", "0.5"},
+                {"minAspectRatio", "Infinity"}, {"minCircularity", "1.1"}, {"minSolidity", "NaN"},
+                {"closeKernel", "4"}, {"openKernel", "17"}, {"processingMode", "YOLO"}, {"foreground", "RED"}}) {
             mvc.perform(multipart("/api/vision/process").file(image()).param(control[0], control[1]))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isString());
+        }
+    }
+
+    @Test
+    void optionalFilterAndExperimentControlsBindWithoutChangingLegacyFields() throws Exception {
+        mvc.perform(multipart("/api/vision/process").file(image())
+                        .param("processingMode", "SEGMENTATION").param("foreground", "BRIGHT")
+                        .param("blurKernel", "1")
+                        .param("closeKernel", "1").param("openKernel", "1")
+                        .param("maxContourArea", "20000").param("minAspectRatio", "1.1")
+                        .param("maxAspectRatio", "2").param("minCircularity", "0.5")
+                        .param("minSolidity", "0.9").param("excludeBoundary", "true"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.contourCount").value(1))
+                .andExpect(jsonPath("$.detectedContourCount").value(1))
+                .andExpect(jsonPath("$.parameters.boundary.mode").value("SEGMENTATION"))
+                .andExpect(jsonPath("$.parameters.filters.excludeBoundary").value(true))
+                .andExpect(jsonPath("$.parameters.filters.maxAspectRatio").value(2))
+                .andExpect(jsonPath("$.contours[0].area").value(9600));
+    }
+
+    @Test
+    void dashboardExposesIndependentAnnotationsAndExperimentalComparison() throws Exception {
+        var response = mvc.perform(get("/")).andExpect(status().isOk());
+        for (String id : new String[]{"image", "cannyLow", "cannyHigh", "show-edges", "show-contours",
+                "show-boxes", "show-centroids", "show-ids", "show-axes", "geometry-overlay", "original-view",
+                "processingMode", "compare-raw", "preview-view", "contour-selection", "excludeBoundary"}) {
+            response.andExpect(content().string(containsString("id=\"" + id + "\"")));
         }
     }
 

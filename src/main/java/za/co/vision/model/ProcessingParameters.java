@@ -7,14 +7,42 @@ package za.co.vision.model;
  * @param cannyHigh upper hysteresis threshold, greater than the lower and at most 255
  * @param minContourArea inclusive minimum polygon area in square pixels
  * @param blurKernel odd Gaussian kernel side length from 1 to 31; 1 disables smoothing
+ * @param filters optional shape/maximum-area filters; null selects disabled additional filters
+ * @param boundary contour-mask experiment; null selects the original Canny pipeline
  */
 public record ProcessingParameters(double cannyLow, double cannyHigh,
-                                   double minContourArea, int blurKernel) {
+                                   double minContourArea, int blurKernel, ContourFilters filters,
+                                   BoundaryOptions boundary) {
+    /**
+     * Preserves the original Java constructor and raw minimum-area filtering behavior.
+     * @param cannyLow lower threshold
+     * @param cannyHigh upper threshold
+     * @param minContourArea minimum area in px²
+     * @param blurKernel odd Gaussian kernel side length
+     */
+    public ProcessingParameters(double cannyLow, double cannyHigh, double minContourArea, int blurKernel) {
+        this(cannyLow, cannyHigh, minContourArea, blurKernel, ContourFilters.none(), BoundaryOptions.raw());
+    }
+
+    /**
+     * Selects optional filters while keeping raw Canny extraction.
+     * @param cannyLow lower threshold
+     * @param cannyHigh upper threshold
+     * @param minContourArea minimum area in px²
+     * @param blurKernel odd Gaussian kernel side
+     * @param filters optional source-resolution filters
+     */
+    public ProcessingParameters(double cannyLow, double cannyHigh, double minContourArea, int blurKernel,
+                                ContourFilters filters) {
+        this(cannyLow, cannyHigh, minContourArea, blurKernel, filters, BoundaryOptions.raw());
+    }
     /**
      * Checks numeric limits, finiteness and threshold order.
      * @throws IllegalArgumentException if any control is invalid
      */
     public ProcessingParameters {
+        filters = filters == null ? ContourFilters.none() : filters;
+        boundary = boundary == null ? BoundaryOptions.raw() : boundary;
         if (!Double.isFinite(cannyLow) || !Double.isFinite(cannyHigh)
                 || cannyLow < 0 || cannyHigh > 255 || cannyLow >= cannyHigh) {
             throw new IllegalArgumentException("Canny thresholds must satisfy 0 ≤ low < high ≤ 255.");
@@ -24,6 +52,9 @@ public record ProcessingParameters(double cannyLow, double cannyHigh,
         }
         if (blurKernel < 1 || blurKernel > 31 || blurKernel % 2 == 0) {
             throw new IllegalArgumentException("Gaussian kernel must be an odd integer between 1 and 31.");
+        }
+        if (filters.maxContourArea() != null && filters.maxContourArea() < minContourArea) {
+            throw new IllegalArgumentException("Maximum contour area must be at least the minimum area.");
         }
     }
 }

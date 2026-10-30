@@ -12,10 +12,34 @@ import java.util.List;
  * @param centre moment centroid, or rotated-rectangle centre when m00 is zero
  * @param centroidFallback true when a zero-area contour required the fallback
  * @param rotatedRectangle minimum-area rectangle and normalized orientation
+ * @param aspectRatio long side divided by short side; null when the short side is zero
+ * @param circularity 4π times polygon area divided by closed perimeter squared; zero for zero perimeter
+ * @param solidity polygon area divided by convex hull area; zero for a zero-area hull
+ * @param extent polygon area divided by the inclusive raster bounding rectangle area
+ * @param touchesImageBoundary true when contour bounds reach any source image border
+ * @param orientationAxis source-coordinate endpoints of the rectangle's long axis; null for a point
  */
 public record ContourMeasurement(int id, double area, double perimeter,
                                  BoundingRectangle boundingRectangle, Coordinate centre,
-                                 boolean centroidFallback, OrientedRectangle rotatedRectangle) {
+                                 boolean centroidFallback, OrientedRectangle rotatedRectangle,
+                                 Double aspectRatio, double circularity, double solidity,
+                                 double extent, boolean touchesImageBoundary, Axis orientationAxis) {
+    /**
+     * Relabels retained contours without recomputing native geometry.
+     * @param newId one-based result label
+     * @return the same measurements with the new ID
+     */
+    public ContourMeasurement withId(int newId) {
+        return new ContourMeasurement(newId, area, perimeter, boundingRectangle, centre,
+                centroidFallback, rotatedRectangle, aspectRatio, circularity, solidity, extent, touchesImageBoundary, orientationAxis);
+    }
+
+    /**
+     * Long-axis segment computed in Java, centred on the rotated rectangle (not the area centroid).
+     * @param start first source-coordinate endpoint
+     * @param end opposite source-coordinate endpoint
+     */
+    public record Axis(Coordinate start, Coordinate end) { }
     /**
      * Image-space point, which may be subpixel or slightly outside the image for rotated boxes.
      * @param x horizontal coordinate in px

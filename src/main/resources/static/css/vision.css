@@ -69,3 +69,12 @@ summary { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+/* Photograph and SVG use the same preview viewport, including its letterboxing. */
+.image-stage { position: relative; }
+#geometry-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.comparison-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 0 20px 14px; }
+.comparison-toolbar select { width: auto; max-width: 100%; font-size: .75rem; }
+.comparison-toolbar button { font-size: .75rem; }
+.boxes-dot { background: #e6a200; }
+.centroids-dot { background: #c4289c; }
+.axes-dot { background: #e64e20; }
