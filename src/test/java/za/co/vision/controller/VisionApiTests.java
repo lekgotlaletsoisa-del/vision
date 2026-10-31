@@ -48,7 +48,7 @@ class VisionApiTests {
         mvc.perform(get("/")).andExpect(status().isOk()).andExpect(view().name("index"))
                 .andExpect(content().string(containsString("Vision Lab")))
                 .andExpect(content().string(containsString("bootstrap-5.3.8.min.css")))
-                .andExpect(content().string(containsString("value=\"50.0\"")));
+                .andExpect(content().string(containsString("data-max-pixels=\"16000000\"")));
         mvc.perform(get("/api/vision/health")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ready"))
                 .andExpect(jsonPath("$.opencvVersion").value(startsWith("4.14.")));
@@ -133,14 +133,19 @@ class VisionApiTests {
     }
 
     @Test
-    void dashboardExposesIndependentAnnotationsAndExperimentalComparison() throws Exception {
+    void dashboardContainsOnlyCaptureAndTwoDisplaySwitches() throws Exception {
         var response = mvc.perform(get("/")).andExpect(status().isOk());
-        for (String id : new String[]{"image", "cannyLow", "cannyHigh", "show-edges", "show-contours",
-                "show-boxes", "show-centroids", "show-ids", "show-axes", "geometry-overlay", "original-view",
-                "processingMode", "compare-raw", "preview-view", "contour-selection", "excludeBoundary", "stage-note", "kernelShape",
-                "retrievalMode", "chainMode", "approximationPercent", "show-approximation"}) {
+        for (String id : new String[]{"camera-button", "show-edges", "show-contours", "geometry-overlay",
+                "camera-dialog", "camera-video", "camera-shutter", "preview-image"}) {
             response.andExpect(content().string(containsString("id=\"" + id + "\"")));
         }
+        var html = response.andReturn().getResponse().getContentAsString();
+        org.assertj.core.api.Assertions.assertThat(html)
+                .containsOnlyOnce("id=\"show-edges\"").containsOnlyOnce("id=\"show-contours\"")
+                .doesNotContain("<select", "<details", "<table", "type=\"file\"", "type=\"number\"",
+                        "type=\"range\"", "type=\"submit\"", "show-boxes", "show-centroids", "show-ids",
+                        "show-axes", "show-approximation", "load-server-result", "full-size-link");
+        org.assertj.core.api.Assertions.assertThat(html.split("type=\"checkbox\"", -1)).hasSize(3);
     }
 
     @Test

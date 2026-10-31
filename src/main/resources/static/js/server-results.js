@@ -1,6 +1,6 @@
 'use strict';
 (() => {
-  /** Maps stored request parameters to existing form controls without recomputing geometry. */
+  /** Maps stored parameters to API fields for one-time legacy browser-result publication. */
   function settings(parameters) {
     const filters = parameters.filters || {};
     const boundary = parameters.boundary || {};
@@ -34,8 +34,7 @@
     return {
       version: 1, photo: await original.blob(), photoName: saved.photoType === 'image/png' ? 'saved-photo.png' : 'saved-photo.jpg',
       result: saved.result, analysisCurrent: true, resultLocation: location,
-      settings: settings(saved.result.parameters),
-      display: { view: 'photo', selection: '', checks: [true, true, true, true, true, true], overlayDefaultsVersion: 1 }
+      display: { version: 2, edges: true, contours: true }
     };
   }
 

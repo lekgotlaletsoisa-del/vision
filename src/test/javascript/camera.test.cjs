@@ -30,7 +30,7 @@ class Element {
         copy.children = deep ? this.children.map(child => child.cloneNode(true)) : [];
         return copy;
     }
-    removeAttribute(name) { delete this[name]; }
+    removeAttribute(name) { if (name === 'hidden') this.hidden = false; else delete this[name]; }
     reportValidity() { return true; }
     closest() { return null; }
     scrollIntoView() { this.scrolled = true; }
@@ -52,20 +52,18 @@ function harness(options = {}) {
     track.stops = 0;
     track.stop = () => { track.stops++; };
     const stream = { getTracks: () => [track], getVideoTracks: () => [track] };
-    get('cannyLow').value = '50';
-    get('cannyHigh').value = '150';
-    for (const id of ['show-edges', 'show-contours', 'show-boxes', 'show-centroids', 'show-ids', 'show-axes']) get(id).checked = true;
-    get('preview-view').value = 'photo';
+    for (const id of ['show-edges', 'show-contours']) get(id).checked = true;
     get('process-form').dataset = { maxBytes: '10485760', maxPixels: '16000000' };
-    get('process-form').elements = ['image', 'camera-button', 'cannyLow', 'cannyHigh', 'process-button'].map(get);
+    get('process-form').elements = ['camera-button', 'show-edges', 'show-contours'].map(get);
     let submission = Promise.resolve();
     get('process-form').requestSubmit = () => { submission = get('process-form').emit('submit', { preventDefault() {} }); };
     const response = options.response || { originalImage: 'data:image/jpeg;base64,AQ==', edgesImage: 'data:image/jpeg;base64,Ag==',
         contoursImage: 'data:image/jpeg;base64,Aw==', overlayImage: 'data:image/jpeg;base64,BA==',
-        contourCount: 0, edgePixelCount: 40, contours: [] };
+        width: 1280, height: 720, previewWidth: 1280, previewHeight: 720, contourDrawings: [], contourCount: 0, edgePixelCount: 40, contours: [] };
     const document = new Element();
     document.visibilityState = 'visible';
-    document.getElementById = get;
+    const html = fs.readFileSync(path.resolve(__dirname, '../../main/resources/templates/index.html'), 'utf8');
+    document.getElementById = id => { assert.ok(html.includes('id="' + id + '"'), 'Control exists in page: ' + id); return get(id); };
     document.createDocumentFragment = () => new Element();
     document.createElementNS = (namespace, tag) => new Element(tag);
     document.createElement = tag => {
@@ -123,13 +121,14 @@ async function run() {
     assert.ok(capture.track.stops > 0);
     assert.equal(capture.get('camera-video').srcObject, null);
     assert.equal(capture.get('camera-dialog').open, false);
-    for (const id of ['show-edges', 'show-contours', 'show-boxes', 'show-centroids', 'show-ids', 'show-axes']) {
+    for (const id of ['show-edges', 'show-contours']) {
         assert.equal(capture.get(id).checked, true);
     }
     await capture.shutter();
     assert.equal(capture.requests.length, 1, 'A second click after capture must not submit again.');
     await capture.get('process-form').emit('submit', { preventDefault() {} });
-    assert.equal(capture.requests[1].body.parts.get('image')[0], photo, 'Reprocessing must reuse the frame.');
+    assert.equal(capture.requests.length, 1, 'There is no manual processing action.');
+    assert.deepEqual([...capture.requests[0].body.parts.keys()], ['image'], 'New captures use backend defaults only.');
 
     const cancelled = harness();
     await cancelled.open();
@@ -187,54 +186,9 @@ async function run() {
     await firstClick;
     assert.equal(encoding.requests.length, 0, 'Closing during encoding must cancel the pending capture.');
     assert.ok(encoding.track.stops > 0);
-    console.log('Camera checks passed: automatic submission, duplicate protection, reprocessing, cancellation, late permission, denied permission, HTTPS, background cleanup and frame readiness.');
+    console.log('Camera checks passed: automatic submission, duplicate protection, defaults, cancellation, late permission, denied permission, HTTPS, background cleanup and frame readiness.');
 
-    // Geometry is supplied by Java; the browser only places and scales the returned points.
-    const geometry = id => ({ id, area: 80000, perimeter: 1200, centre: { x: 1200, y: 900 },
-        centroidFallback: false, boundingRectangle: { x: 1000, y: 800, width: 401, height: 201 },
-        rotatedRectangle: { width: 400, height: 200, centre: { x: 1200, y: 900 }, orientationDegrees: 0,
-            vertices: [{ x: 1000, y: 800 }, { x: 1400, y: 800 }, { x: 1400, y: 1000 }, { x: 1000, y: 1000 }] },
-        aspectRatio: 2, circularity: .7, solidity: 1, extent: .99, touchesImageBoundary: false,
-        orientationAxis: { start: { x: 1000, y: 900 }, end: { x: 1400, y: 900 } } });
-    const jpg = 'data:image/jpeg;base64,AQ==';
-    const visual = harness({ response: { width: 4000, height: 3000, previewWidth: 1600, previewHeight: 1200,
-        originalImage: jpg, edgesImage: jpg, contoursImage: jpg, overlayImage: jpg,
-        boundaryMaskImage: 'data:image/png;base64,AQ==', contourCount: 2, detectedContourCount: 5,
-        contours: [geometry(1), geometry(2)], contourDrawings: [{ id: 1, path: 'M1000 800L1400 800Z' }, { id: 2, path: 'M20 20Z' }],
-        parameters: { boundary: { mode: 'MORPHOLOGY' } } } });
-    await visual.open(); await visual.shutter(); await visual.submit();
-    const svg = visual.get('geometry-overlay');
-    assert.equal(svg.viewBox, '0 0 1600 1200');
-    assert.equal(svg.children[0].transform, 'scale(0.4 0.4) translate(0.5 0.5)');
-    assert.equal(svg.children[0].children[0].d, 'M1000 800L1400 800Z');
-    assert.equal(visual.get('contour-count').textContent, '2 retained / 5 detected');
-    assert.match(visual.get('result-mode').textContent, /morphology/);
-    for (const id of ['show-boxes', 'show-centroids', 'show-axes']) visual.get(id).checked = true;
-    visual.get('contour-selection').value = '2';
-    await visual.get('contour-selection').emit('change');
-    const shapes = svg.children[0].children;
-    assert.equal(shapes.filter(item => item.tag === 'polygon').length, 2, 'Selected box and its halo only.');
-    assert.equal(shapes.find(item => item.tag === 'polygon').points, '1000,800 1400,800 1400,1000 1000,1000');
-    assert.equal(shapes.find(item => item.tag === 'line').x1, '1000', 'Use backend axis endpoints unchanged.');
-    assert.equal(shapes.filter(item => item.tag === 'circle').length, 2);
-    assert.equal(shapes.filter(item => item.tag === 'text').length, 1);
-    visual.get('show-contours').checked = false;
-    await visual.get('show-contours').emit('change');
-    assert.equal(svg.children[0].children.filter(item => item.tag === 'path').length, 0);
-    assert.equal(svg.children[0].children.filter(item => item.tag === 'polygon').length, 2, 'Boxes are independent of contours.');
-    visual.get('preview-view').value = 'mask';
-    await visual.get('preview-view').emit('change');
-    assert.equal(svg.hidden, true);
-    assert.match(visual.get('preview-image').alt, /binary/);
-    await visual.get('original-view').emit('click');
-    assert.equal(visual.get('preview-view').value, 'photo');
-    assert.equal(svg.children[0].children.length, 0, 'Original photograph has no annotations.');
-    assert.ok(visual.urls.some(item => item.blob.type === 'image/svg+xml'), 'Open image export includes the displayed annotations.');
-    await visual.get('compare-raw').emit('click');
-    assert.equal(visual.requests[1].body.parts.get('processingMode')[0], 'CANNY');
-    assert.equal(visual.get('measurements-body').children[0].children[0].cells.length, 15);
-    console.log('Preview checks passed: legacy response compatibility, source-coordinate scaling, independent annotations, contour selection, original/mask views, counts, measurements and raw comparison.');
 }
 
 module.exports = { harness };
-if (require.main === module) run();
+if (require.main === module) run().catch(error => { console.error(error); process.exitCode = 1; });

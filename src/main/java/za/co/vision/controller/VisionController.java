@@ -47,13 +47,14 @@ public class VisionController {
     }
 
     /**
-     * Renders the laboratory with configuration-driven controls.
+     * Renders the camera dashboard with Edges and Contours display switches.
+     * New captures use the processing API defaults; only configured image limits
+     * are exposed to the page for preliminary browser validation.
      * @param model Thymeleaf model
      * @return dashboard template name
      */
     @GetMapping("/")
     public String dashboard(Model model) {
-        model.addAttribute("defaults", properties.defaults());
         model.addAttribute("limits", properties);
         return "index";
     }

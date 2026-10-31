@@ -3,92 +3,71 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { Blob, File } = require('node:buffer');
 const { harness } = require('./camera.test.cjs');
-const settle = () => new Promise(setImmediate);
+const { result, photo, location, snapshot, settle } = require('./fixtures.cjs');
 const source = fs.readFileSync(path.resolve(__dirname, '../../main/resources/static/js/server-results.js'), 'utf8');
-const id = '00000000-0000-4000-8000-000000000001';
-const location = `/results/${id}`;
-const jpg = 'data:image/jpeg;base64,AQ==';
-const result = { width: 220, height: 160, previewWidth: 220, previewHeight: 160, contourCount: 0,
-    detectedContourCount: 0, edgePixelCount: 0, boundaryPixelCount: 0, contours: [], contourDrawings: [],
-    originalImage: jpg, edgesImage: jpg, contoursImage: jpg, overlayImage: jpg,
-    parameters: { cannyLow: 35, cannyHigh: 120, minContourArea: 100, blurKernel: 3,
-        filters: { maxContourArea: 4000, minCircularity: .2, excludeBoundary: false },
-        boundary: { mode: 'MORPHOLOGY', closeKernel: 5, openKernel: 1, foreground: 'BRIGHT', shape: 'RECTANGLE' },
-        tracing: { retrieval: 'TREE', chain: 'NONE', approximationPercent: 2 } } };
 function moduleWith(fetch) {
     const window = {};
     new vm.Script(source).runInNewContext({ window, fetch });
     return window.VisionServerResults;
 }
-const serverModule = moduleWith(() => { throw new Error('Unexpected serverModule request'); });
-const photo = new File(['original photo'], 'existing.jpg', { type: 'image/jpeg' });
-const snapshot = extra => ({ version: 1, photo, photoName: photo.name, result, analysisCurrent: true,
-    settings: serverModule.settings(result.parameters), display: { view: 'photo', selection: '', checks: [true, true, true, true, true, true], overlayDefaultsVersion: 1 }, ...extra });
 async function run() {
     const reads = [];
     const loader = moduleWith(async url => {
         reads.push(url);
-        if (reads.length === 1) return { ok: true, json: async () => ({ id, photoType: 'image/jpeg', result }) };
-        return { ok: true, blob: async () => photo };
+        return reads.length === 1 ? { ok: true, json: async () => ({ id: location.split('/')[2], photoType: 'image/jpeg', result }) }
+            : { ok: true, blob: async () => photo };
     });
     const loaded = await loader.loadLatest();
     assert.deepEqual(reads, ['/api/vision/results/latest', location + '/original']);
     assert.equal(loaded.resultLocation, location);
-    assert.equal(loaded.settings.kernelShape, 'RECTANGLE');
     assert.equal(await moduleWith(async () => ({ status: 404 })).loadLatest(), null);
     await assert.rejects(moduleWith(async () => ({ ok: false, status: 500 })).loadLatest());
-
+    await assert.rejects(moduleWith(async () => ({ ok: true, json: async () => ({ id: '../bad' }) })).loadLatest());
     let saved;
     const storage = { load: async () => saved, save: async value => { saved = value; } };
-    const fresh = harness({ storage, server: { loadLatest: async () => loaded, settings: serverModule.settings } }); await settle();
-    assert.equal(fresh.requests.length, 0, 'Restoring a server result must not rerun processing.');
-    assert.match(fresh.get('status').textContent, /Server photo and analysis restored/);
-    assert.equal(fresh.get('cannyLow').value, 35);
-    assert.equal(fresh.get('saved-result-link').href, location + '?view=photo');
+    const fresh = harness({ storage, server: { loadLatest: async () => loaded, settings: loader.settings } }); await settle();
+    assert.equal(fresh.requests.length, 0, 'Fresh browser loads latest without reprocessing.');
     assert.equal(saved.resultLocation, location);
-    await fresh.get('load-server-result').emit('click'); await settle();
-    assert.equal(fresh.requests.length, 0);
+    assert.equal(fresh.get('preview-image').hidden, false);
 
-    saved = snapshot({ settings: { ...serverModule.settings(result.parameters), cannyLow: 90 } });
-    const migrated = harness({ storage, response: result, server: { settings: serverModule.settings },
+    saved = snapshot({ resultLocation: null, settings: { cannyLow: 90 } });
+    const migrate = harness({ storage, response: result, server: { settings: loader.settings },
         request: async () => ({ ok: true, json: async () => result, headers: { get: () => location } }) });
     await settle(); await settle();
-    assert.equal(migrated.requests.length, 1, 'Publish a browser-only matching result once.');
-    assert.equal(migrated.requests[0].body.parts.get('cannyLow')[0], '35', 'Use the analysis parameters rather than unsent form edits.');
-    assert.equal(migrated.get('cannyLow').value, 90, 'Preserve pending form edits.');
+    assert.equal(migrate.requests.length, 1);
+    assert.equal(migrate.requests[0].body.parts.get('cannyLow')[0], '35', 'Publish matching analysis settings, never stale unsent form settings.');
     assert.equal(saved.resultLocation, location);
-    const reopened = harness({ storage, server: { settings: serverModule.settings } }); await settle();
-    assert.equal(reopened.requests.length, 0, 'An already published session must not publish again.');
-    saved = snapshot({ analysisCurrent: false, display: { view: 'source', selection: '', checks: [true, true, true, true, true, true], overlayDefaultsVersion: 1 } });
-    const pending = harness({ storage, server: { settings: serverModule.settings } }); await settle();
-    assert.equal(pending.requests.length, 0, 'Never publish previous measurements against a pending replacement photo.');
-    assert.equal(pending.get('preview-view').value, 'source');
+    const reopened = harness({ storage, server: { settings: loader.settings } }); await settle();
+    assert.equal(reopened.requests.length, 0, 'Publication happens once.');
 
-    saved = snapshot();
-    const previous = saved;
-    const failed = harness({ storage, server: { settings: serverModule.settings },
-        request: async () => ({ ok: false, json: async () => ({ message: 'Storage unavailable.' }) }) });
+    saved = snapshot({ analysisCurrent: false });
+    const pending = harness({ storage, response: result, server: { settings: loader.settings } }); await settle();
+    assert.equal(pending.requests.length, 1, 'Pending old photo is processed automatically.');
+    assert.deepEqual([...pending.requests[0].body.parts.keys()], ['image'], 'Never reuse previous-photo measurements or parameters.');
+
+    saved = snapshot({ resultLocation: null });
+    const failed = harness({ storage, server: { settings: loader.settings }, request: async () => ({ ok: false, json: async () => ({ message: 'Server storage unavailable.' }) }) });
     await settle(); await settle();
-    assert.equal(saved, previous, 'A failed publication must preserve the local successful result.');
-    assert.match(failed.get('status').textContent, /Storage unavailable/);
+    assert.equal(await saved.photo.text(), await photo.text()); assert.equal(saved.result, result);
+    assert.match(failed.get('status').textContent, /storage unavailable/);
 
     let finishLoad;
     saved = undefined;
-    const late = harness({ storage, server: { loadLatest: () => new Promise(resolve => { finishLoad = resolve; }), settings: serverModule.settings } });
-    await settle(); await late.open(); await late.shutter(); await late.submit();
+    const late = harness({ storage, response: result, server: { loadLatest: () => new Promise(resolve => { finishLoad = resolve; }) } });
+    await settle(); await late.open(); await late.shutter();
+    const captured = late.get('preview-image').src;
     finishLoad(loaded); await settle();
-    assert.ok(saved.photo.name.startsWith('camera-'), 'A late server restore must not replace a new photo.');
+    assert.equal(late.get('preview-image').src, captured);
+    assert.ok(saved.photo.name.startsWith('camera-'));
 
-    saved = snapshot({ resultLocation: location });
+    saved = snapshot();
     let finishDecode, count = 0;
-    const samePhoto = harness({ storage, response: result, decodeResult: () => ++count === 1 ? new Promise(resolve => { finishDecode = resolve; }) : Promise.resolve(),
-        request: async () => ({ ok: true, json: async () => result, headers: { get: () => '/results/00000000-0000-4000-8000-000000000002' } }) });
-    await settle();
-    await samePhoto.get('process-form').emit('submit', { preventDefault() {} }); await settle();
+    const racing = harness({ storage, response: result, decodeResult: () => ++count === 1 ? new Promise(resolve => { finishDecode = resolve; }) : Promise.resolve() });
+    await settle(); await racing.open(); await racing.shutter();
+    const newest = racing.get('preview-image').src;
     finishDecode(); await settle();
-    assert.equal(saved.resultLocation, '/results/00000000-0000-4000-8000-000000000002', 'A late restore of the same photograph must not overwrite newer processing.');
-    console.log('Server-result checks passed: immutable original URLs, cross-browser restoration without processing, one-time local publication, stored parameter fidelity, pending-photo separation, publication failures and late-restore races.');
+    assert.equal(racing.get('preview-image').src, newest, 'Late result decoding cannot replace a new capture.');
+    console.log('Server-result checks passed: immutable IDs, fresh-browser restoration, legacy publication, saved parameters, pending photos, failures and restore/decode races.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

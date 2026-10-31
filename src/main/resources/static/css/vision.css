@@ -78,3 +78,16 @@ summary { cursor: pointer; }
 .boxes-dot { background: #e6a200; }
 .centroids-dot { background: #c4289c; }
 .axes-dot { background: #e64e20; }
+/* The main dashboard has only capture and two local display switches. */
+.simple-dashboard { padding-bottom: 12px; }
+.simple-dashboard .preview-toolbar { justify-content: space-between; margin: 0; }
+.simple-dashboard .camera-button { min-width: 138px; --bs-btn-color: #fff; }
+.simple-dashboard .overlay-controls label { min-height: 44px; font-size: .95rem; }
+.simple-dashboard .image-stage { height: calc(100dvh - 215px); min-height: 280px; }
+.simple-dashboard .status-message { padding-bottom: 0; }
+@media (max-width: 420px) {
+  .simple-dashboard .preview-toolbar { gap: 8px; }
+  .simple-dashboard .camera-button { min-width: 112px; }
+  .simple-dashboard .overlay-controls { gap: 12px; }
+  .simple-dashboard .overlay-controls label { font-size: .85rem; gap: 5px; }
+}
