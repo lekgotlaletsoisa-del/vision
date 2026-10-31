@@ -47,8 +47,26 @@ public record ContourFilters(Double maxContourArea, Double minAspectRatio, Doubl
      * @return true when every enabled criterion passes
      */
     public boolean accepts(ContourMeasurement contour, double minimumArea) {
+        return accepts(contour, minimumArea, 0, 0);
+    }
+
+    /**
+     * Adds an alternative eligibility path for long, spatially extended edge traces.
+     * Only the minimum-area criterion is bypassed; all explicit shape, maximum-area
+     * and border filters still apply. Perimeter may run out and back along a thin edge.
+     * @param contour original-resolution measurements
+     * @param minimumArea minimum polygon area in px²
+     * @param minimumTraceLength minimum traced perimeter in pixels; zero disables rescue
+     * @param minimumTraceSpan minimum bounding-box diagonal in pixels
+     * @return whether area or sustained trace length qualifies and all other filters pass
+     */
+    public boolean accepts(ContourMeasurement contour, double minimumArea,
+                           double minimumTraceLength, double minimumTraceSpan) {
         Double ratio = contour.aspectRatio();
-        return contour.area() >= minimumArea
+        var bounds = contour.boundingRectangle();
+        double span = Math.hypot(bounds.width() - 1.0, bounds.height() - 1.0);
+        return (contour.area() >= minimumArea || minimumTraceLength > 0
+                && contour.perimeter() >= minimumTraceLength && span >= minimumTraceSpan)
                 && (maxContourArea == null || contour.area() <= maxContourArea)
                 && (minAspectRatio == null || ratio != null && ratio >= minAspectRatio)
                 && (maxAspectRatio == null || ratio != null && ratio <= maxAspectRatio)

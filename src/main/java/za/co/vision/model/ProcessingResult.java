@@ -25,6 +25,7 @@ import java.util.List;
  * @param stages raw, closed and opened Canny masks from this same processing request
  * @param contourSource stage ID supplying contours, or segmentation for brightness regions
  * @param contourDiagnostics hierarchy, approximation and rotated-box fit keyed by retained ID
+ * @param edgeDiagnostics selected thresholds and guarded repair decisions; null in pre-refinement archives
  */
 public record ProcessingResult(int width, int height, int previewWidth, int previewHeight,
                                int contourCount, int detectedContourCount,
@@ -34,7 +35,7 @@ public record ProcessingResult(int width, int height, int previewWidth, int prev
                                List<ContourMeasurement> contours, List<ContourDrawing> contourDrawings,
                                int boundaryPixelCount, String boundaryMaskImage,
                                List<ProcessingStage> stages, String contourSource,
-                               List<ContourDiagnostics> contourDiagnostics) {
+                               List<ContourDiagnostics> contourDiagnostics, EdgeDiagnostics edgeDiagnostics) {
     /** Makes the geometry collection immutable. */
     public ProcessingResult {
         contours = List.copyOf(contours);

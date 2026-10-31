@@ -118,12 +118,13 @@
       await validatePhoto(photo);
       const payload = new FormData();
       payload.set('image', photo, photo.name || 'camera-photo.jpg');
-      // Only legacy local-result publication reuses old parameters. New photos use server defaults.
+      // Existing photos keep their baseline parameters on upgrade; all dashboard requests enable refinement.
       if (savedParameters && window.VisionServerResults) {
         for (const [name, value] of Object.entries(window.VisionServerResults.settings(savedParameters))) {
           if (value !== '' && value != null) payload.set(name, String(value));
         }
       }
+      payload.set('detectionMode', 'ENHANCED');
       const response = await fetch(form.action, { method: 'POST', body: payload, cache: 'no-store' });
       let data;
       try { data = await response.json(); }
@@ -168,7 +169,8 @@
       if (!await displayAnalysis(saved.result, photo, saved.resultLocation || null, expectedRevision)) return;
       updatePreview();
       retainSession();
-      if (!resultLocation && saved.result.parameters && window.VisionServerResults) {
+      if (saved.result.parameters && window.VisionServerResults
+          && (!resultLocation || saved.result.parameters.detectionMode !== 'ENHANCED')) {
         await processImage(photo, saved.result.parameters);
       }
     } catch {

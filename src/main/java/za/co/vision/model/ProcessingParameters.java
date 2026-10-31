@@ -5,15 +5,30 @@ package za.co.vision.model;
  * and L2 gradient magnitude; all geometry stays at the original image resolution.
  * @param cannyLow lower hysteresis threshold, from 0 to 255
  * @param cannyHigh upper hysteresis threshold, greater than the lower and at most 255
- * @param minContourArea inclusive minimum polygon area in square pixels
+ * @param minContourArea inclusive minimum polygon area in square pixels; ENHANCED also admits sustained long traces
  * @param blurKernel odd Gaussian kernel side length from 1 to 31; 1 disables smoothing
  * @param filters optional shape/maximum-area filters; null selects disabled additional filters
  * @param boundary contour-mask experiment; null selects the original Canny pipeline
  * @param tracing contour retrieval, chain storage and diagnostic approximation options
+ * @param detectionMode automatic refinement policy; null preserves STANDARD behavior
  */
 public record ProcessingParameters(double cannyLow, double cannyHigh,
                                    double minContourArea, int blurKernel, ContourFilters filters,
-                                   BoundaryOptions boundary, ContourOptions tracing) {
+                                   BoundaryOptions boundary, ContourOptions tracing, DetectionMode detectionMode) {
+    /**
+     * Preserves exact legacy processing for existing Java callers and saved requests.
+     * @param cannyLow lower Canny threshold
+     * @param cannyHigh upper Canny threshold
+     * @param minContourArea minimum polygon area in px²
+     * @param blurKernel odd Gaussian kernel side
+     * @param filters optional geometry filters
+     * @param boundary contour source and morphology
+     * @param tracing retrieval, chain storage and approximation
+     */
+    public ProcessingParameters(double cannyLow, double cannyHigh, double minContourArea, int blurKernel,
+                                ContourFilters filters, BoundaryOptions boundary, ContourOptions tracing) {
+        this(cannyLow, cannyHigh, minContourArea, blurKernel, filters, boundary, tracing, DetectionMode.STANDARD);
+    }
     /**
      * Preserves existing callers with default contour tracing.
      * @param cannyLow lower threshold
@@ -55,6 +70,7 @@ public record ProcessingParameters(double cannyLow, double cannyHigh,
      * @throws IllegalArgumentException if any control is invalid
      */
     public ProcessingParameters {
+        detectionMode = detectionMode == null ? DetectionMode.STANDARD : detectionMode;
         filters = filters == null ? ContourFilters.none() : filters;
         boundary = boundary == null ? BoundaryOptions.raw() : boundary;
         tracing = tracing == null ? ContourOptions.defaults() : tracing;

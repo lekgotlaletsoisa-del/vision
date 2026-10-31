@@ -37,7 +37,7 @@ public class SavedAnalysisController {
     public SavedAnalysisController(AnalysisStore store) { this.store = store; }
 
     /**
-     * Renders visible photographs, settings and measurement tables without requiring JavaScript.
+     * Renders visible photographs, baseline/selected detection settings and measurements without JavaScript.
      * Missing/pruned results render an explanatory HTML page with status 404.
      * @param id canonical UUID or latest
      * @param view photo, source, raw, closed, opened or mask; defaults to photo
@@ -118,6 +118,7 @@ public class SavedAnalysisController {
         body.put("contourCount", result.contourCount()); body.put("detectedContourCount", result.detectedContourCount());
         body.put("edgePixelCount", result.edgePixelCount()); body.put("boundaryPixelCount", result.boundaryPixelCount());
         body.put("contours", result.contours());
+        body.put("edgeDiagnostics", result.edgeDiagnostics());
         body.put("diagnostics", result.contourDiagnostics().stream().map(SavedAnalysisController::diagnosticSummary).toList());
         body.put("images", Map.of("original", base + "/images/original", "overlay", base + "/images/overlay", "mask", base + "/images/mask"));
         body.put("stages", result.stages().stream().map(stage -> Map.of("id", stage.id(), "label", stage.label(),

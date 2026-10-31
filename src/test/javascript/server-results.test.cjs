@@ -41,16 +41,31 @@ async function run() {
     const reopened = harness({ storage, server: { settings: loader.settings } }); await settle();
     assert.equal(reopened.requests.length, 0, 'Publication happens once.');
 
+    saved = snapshot({ result: { ...result, parameters: { ...result.parameters, detectionMode: 'STANDARD' } } });
+    const upgraded = harness({ storage, response: result, server: { settings: loader.settings } });
+    await settle(); await settle();
+    assert.equal(upgraded.requests.length, 1, 'Older matching analysis upgrades once without a new photo.');
+    assert.equal(upgraded.requests[0].body.parts.get('detectionMode')[0], 'ENHANCED');
+    assert.equal(saved.result.parameters.detectionMode, 'ENHANCED');
+
     saved = snapshot({ analysisCurrent: false });
     const pending = harness({ storage, response: result, server: { settings: loader.settings } }); await settle();
     assert.equal(pending.requests.length, 1, 'Pending old photo is processed automatically.');
-    assert.deepEqual([...pending.requests[0].body.parts.keys()], ['image'], 'Never reuse previous-photo measurements or parameters.');
+    assert.deepEqual([...pending.requests[0].body.parts.keys()], ['image', 'detectionMode'], 'Never reuse previous-photo measurements or parameters.');
 
     saved = snapshot({ resultLocation: null });
     const failed = harness({ storage, server: { settings: loader.settings }, request: async () => ({ ok: false, json: async () => ({ message: 'Server storage unavailable.' }) }) });
     await settle(); await settle();
     assert.equal(await saved.photo.text(), await photo.text()); assert.equal(saved.result, result);
     assert.match(failed.get('status').textContent, /storage unavailable/);
+
+    saved = snapshot({ result: { ...result, parameters: { ...result.parameters, detectionMode: 'STANDARD' } } });
+    const legacyResult = saved.result;
+    const refusedUpgrade = harness({ storage, server: { settings: loader.settings }, request: async () => ({ ok: false, json: async () => ({ message: 'Upgrade unavailable.' }) }) });
+    await settle(); await settle();
+    assert.equal(saved.result, legacyResult, 'Failed upgrades preserve a successful matching old analysis.');
+    assert.equal(await saved.photo.text(), await photo.text());
+    assert.match(refusedUpgrade.get('status').textContent, /previous photo/);
 
     let finishLoad;
     saved = undefined;

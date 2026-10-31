@@ -25,7 +25,7 @@ class VisionHttpTests {
     private int port;
 
     @Test
-    void allNineteenMultipartPartsFitTheBoundedParserBudget() throws Exception {
+    void allTwentyMultipartPartsFitTheBoundedParserBudget() throws Exception {
         var fields = new LinkedHashMap<String, String>();
         fields.put("cannyLow", "50"); fields.put("cannyHigh", "150");
         fields.put("minContourArea", "100"); fields.put("blurKernel", "1");
@@ -36,6 +36,7 @@ class VisionHttpTests {
         fields.put("openKernel", "1"); fields.put("foreground", "BRIGHT");
         fields.put("kernelShape", "RECTANGLE"); fields.put("retrievalMode", "TREE");
         fields.put("chainMode", "NONE"); fields.put("approximationPercent", "2");
+        fields.put("detectionMode", "ENHANCED");
         String boundary = "VisionSyntheticBoundary";
         var body = new ByteArrayOutputStream();
         for (var field : fields.entrySet()) {

@@ -16,6 +16,7 @@ import org.opencv.core.MatOfByte;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
 import za.co.vision.model.ContourOptions;
+import za.co.vision.model.EdgeDiagnostics;
 import za.co.vision.model.ContourDiagnostics;
 import za.co.vision.model.ProcessingStage;
 import org.opencv.core.Size;
@@ -48,7 +49,9 @@ public class VisionProcessingService {
 
     /**
      * Validates an encoded JPEG/PNG, runs Canny and the selected extraction mode, and encodes results.
-     * Optional experiments transform a separate mask. Geometry is measured once before inclusive
+     * ENHANCED compares guarded Canny trials and can retain long, low-area traces.
+     * Small-gap repair uses the existing closing stage only when conservative guards pass.
+     * Explicit contour-source experiments are preserved. Geometry is measured once before inclusive
      * filtering, then retained contours receive stable area-sorted labels within this request.
      * Detection and geometry use the original resolution. Display previews are bounded in size;
      * EXIF orientation is ignored consistently for every output image.
@@ -92,14 +95,19 @@ public class VisionProcessingService {
             }
             Mat gray = scope.own(new Mat());
             Mat blurred = scope.own(new Mat());
-            Mat edges = scope.own(new Mat());
             Mat hierarchy = scope.own(new Mat());
             Imgproc.cvtColor(original, gray, Imgproc.COLOR_BGR2GRAY);
             Imgproc.GaussianBlur(gray, blurred,
                     new Size(parameters.blurKernel(), parameters.blurKernel()), 0);
-            Imgproc.Canny(blurred, edges, parameters.cannyLow(), parameters.cannyHigh(), 3, true);
+            var selection = EdgeRefinement.select(scope, blurred, parameters, properties.maxContours());
+            Mat edges = selection.edges();
             var stages = ContourBoundaries.stages(scope, blurred, edges, parameters.boundary());
-            Mat contourInput = stages.active();
+            var repair = EdgeRefinement.repair(edges, stages.closed(), parameters, properties.maxContours(),
+                    selection.minimumLength(), selection.minimumSpan());
+            Mat contourInput = repair.applied() ? stages.closed() : stages.active();
+            String contourSource = repair.applied() ? "closed" : stages.source();
+            var edgeDiagnostics = new EdgeDiagnostics(selection.low(), selection.high(), selection.minimumLength(),
+                    selection.minimumSpan(), repair.applied(), repair.reason(), selection.trials());
             int boundaryPixelCount = Core.countNonZero(contourInput);
             List<MatOfPoint> contours = new ArrayList<>();
             try {
@@ -125,7 +133,8 @@ public class VisionProcessingService {
                 measured.add(new Candidate(i, contour, ContourGeometry.measure(contour, 0, original.cols(), original.rows())));
             }
             List<Candidate> candidates = measured.stream()
-                    .filter(candidate -> parameters.filters().accepts(candidate.measurement(), parameters.minContourArea()))
+                    .filter(candidate -> parameters.filters().accepts(candidate.measurement(), parameters.minContourArea(),
+                            selection.minimumLength(), selection.minimumSpan()))
                     .sorted(Comparator.comparingDouble((Candidate candidate) -> candidate.measurement().area())
                             .reversed().thenComparingInt(candidate -> candidate.measurement().boundingRectangle().y())
                             .thenComparingInt(candidate -> candidate.measurement().boundingRectangle().x()))
@@ -155,7 +164,7 @@ public class VisionProcessingService {
                     retained.size(), contours.size(),
                     Core.countNonZero(edges), (System.nanoTime() - started) / 1_000_000.0,
                     parameters, previews.original(), previews.edges(), previews.contours(), previews.combined(),
-                    measurements, previews.drawings(), boundaryPixelCount, previews.mask(), stagePreviews, stages.source(), diagnostics);
+                    measurements, previews.drawings(), boundaryPixelCount, previews.mask(), stagePreviews, contourSource, diagnostics, edgeDiagnostics);
         }
     }
 

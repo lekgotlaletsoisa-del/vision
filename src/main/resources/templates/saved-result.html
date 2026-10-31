@@ -60,7 +60,12 @@
     </article>
     <section class="card p-3 mb-3" aria-labelledby="settings-title"><h2 id="settings-title" class="h6">Actual processing settings</h2>
       <dl class="row small mb-0">
-        <dt class="col-sm-3">Canny / Gaussian blur</dt><dd class="col-sm-9" th:text="|Low ${result.parameters.cannyLow}, high ${result.parameters.cannyHigh}; blur ${result.parameters.blurKernel} source pixels|"></dd>
+        <dt class="col-sm-3">Detection policy</dt><dd class="col-sm-9" th:text="${result.parameters.detectionMode}"></dd>
+        <th:block th:if="${result.edgeDiagnostics != null}">
+          <dt class="col-sm-3">Selected Canny / trace rescue</dt><dd class="col-sm-9" th:text="|Low ${result.edgeDiagnostics.cannyLow}, high ${result.edgeDiagnostics.cannyHigh}; alternative perimeter ≥ ${result.edgeDiagnostics.minimumTraceLength} px and span ≥ ${result.edgeDiagnostics.minimumTraceSpan} px (0 disables rescue)|"></dd>
+          <dt class="col-sm-3">Automatic small-gap repair</dt><dd class="col-sm-9" th:text="${result.edgeDiagnostics.closingDecision}"></dd>
+        </th:block>
+        <dt class="col-sm-3">Canny baseline / Gaussian blur</dt><dd class="col-sm-9" th:text="|Low ${result.parameters.cannyLow}, high ${result.parameters.cannyHigh}; blur ${result.parameters.blurKernel} source pixels|"></dd>
         <dt class="col-sm-3">Contour source / morphology</dt><dd class="col-sm-9" th:text="|${result.parameters.boundary.mode}; ${result.parameters.boundary.shape}; closing ${result.parameters.boundary.closeKernel}, opening ${result.parameters.boundary.openKernel}; brightness ${result.parameters.boundary.foreground}|"></dd>
         <dt class="col-sm-3">Retrieval / chain / approximation</dt><dd class="col-sm-9" th:text="|${result.parameters.tracing.retrieval} / ${result.parameters.tracing.chain}; epsilon ${result.parameters.tracing.approximationPercent}% of closed perimeter|"></dd>
         <dt class="col-sm-3">Area filters</dt><dd class="col-sm-9" th:text="|Minimum ${result.parameters.minContourArea} px²; maximum ${result.parameters.filters.maxContourArea == null ? 'disabled' : result.parameters.filters.maxContourArea}|"></dd>

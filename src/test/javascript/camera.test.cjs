@@ -128,7 +128,7 @@ async function run() {
     assert.equal(capture.requests.length, 1, 'A second click after capture must not submit again.');
     await capture.get('process-form').emit('submit', { preventDefault() {} });
     assert.equal(capture.requests.length, 1, 'There is no manual processing action.');
-    assert.deepEqual([...capture.requests[0].body.parts.keys()], ['image'], 'New captures use backend defaults only.');
+    assert.deepEqual([...capture.requests[0].body.parts.keys()], ['image', 'detectionMode'], 'New captures use enhanced processing with backend baseline defaults.');
 
     const cancelled = harness();
     await cancelled.open();

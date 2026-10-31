@@ -82,6 +82,26 @@ class VisionApiTests {
     }
 
     @Test
+    void enhancedProfileReportsItsDecisionsAndKeepsExplicitManualCompatibility() throws Exception {
+        var processed = mvc.perform(multipart("/api/vision/process").file(image()).param("detectionMode", "ENHANCED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.parameters.detectionMode").value("ENHANCED"))
+                .andExpect(jsonPath("$.parameters.boundary.shape").value("RECTANGLE"))
+                .andExpect(jsonPath("$.edgeDiagnostics.trials", hasSize(4)))
+                .andExpect(jsonPath("$.edgeDiagnostics.minimumTraceLength").value(40))
+                .andExpect(jsonPath("$.edgeDiagnostics.cannyHigh").isNumber()).andReturn();
+        String location = processed.getResponse().getHeader("Location");
+        mvc.perform(get(location)).andExpect(status().isOk())
+                .andExpect(content().string(containsString("Automatic small-gap repair")));
+        mvc.perform(get("/api/vision" + location + "/measurements")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.edgeDiagnostics.trials", hasSize(4)));
+        mvc.perform(multipart("/api/vision/process").file(image()).param("detectionMode", "STANDARD"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.parameters.detectionMode").value("STANDARD"))
+                .andExpect(jsonPath("$.edgeDiagnostics.trials", hasSize(0)))
+                .andExpect(jsonPath("$.edgeDiagnostics.minimumTraceLength").value(0));
+    }
+
+    @Test
     void controlsOverrideDefaults() throws Exception {
         mvc.perform(multipart("/api/vision/process").file(image())
                         .param("cannyLow", "10").param("cannyHigh", "40")
@@ -109,7 +129,7 @@ class VisionApiTests {
                 {"cannyLow", "200"}, {"maxContourArea", "50"}, {"maxAspectRatio", "0.5"},
                 {"minAspectRatio", "Infinity"}, {"minCircularity", "1.1"}, {"minSolidity", "NaN"},
                 {"closeKernel", "4"}, {"openKernel", "17"}, {"processingMode", "YOLO"}, {"foreground", "RED"}, {"kernelShape", "CROSS"}, {"retrievalMode", "LIST"},
-                {"chainMode", "FAST"}, {"approximationPercent", "NaN"}, {"approximationPercent", "11"}}) {
+                {"detectionMode", "MAGIC"}, {"chainMode", "FAST"}, {"approximationPercent", "NaN"}, {"approximationPercent", "11"}}) {
             mvc.perform(multipart("/api/vision/process").file(image()).param(control[0], control[1]))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isString());
         }

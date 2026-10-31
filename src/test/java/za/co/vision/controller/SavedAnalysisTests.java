@@ -139,6 +139,25 @@ class SavedAnalysisTests {
         assertThrows(IllegalArgumentException.class, () -> new AnalysisStore(directory, 0, mapper));
     }
 
+    @Test
+    void preRefinementArchiveLoadsWithoutNewFieldsOrReprocessing() throws Exception {
+        var created = mvc.perform(multipart("/api/vision/process").file(new MockMultipartFile("image", image()))).andReturn();
+        var result = mapper.readValue(created.getResponse().getContentAsByteArray(), ProcessingResult.class);
+        var store = new AnalysisStore(directory, 20, mapper);
+        var saved = store.save(image(), result);
+        Path file = directory.resolve(saved.id()).resolve("analysis.json");
+        var tree = (tools.jackson.databind.node.ObjectNode) mapper.readTree(Files.readAllBytes(file));
+        var oldResult = (tools.jackson.databind.node.ObjectNode) tree.get("result");
+        oldResult.remove("edgeDiagnostics");
+        ((tools.jackson.databind.node.ObjectNode) oldResult.get("parameters")).remove("detectionMode");
+        Files.write(file, mapper.writeValueAsBytes(tree));
+        var reopened = new AnalysisStore(directory, 20, mapper).find(saved.id()).orElseThrow();
+        assertEquals(za.co.vision.model.DetectionMode.STANDARD, reopened.result().parameters().detectionMode());
+        assertNull(reopened.result().edgeDiagnostics());
+        assertEquals(result.contours(), reopened.result().contours());
+        assertArrayEquals(image(), store.original(saved.id()).orElseThrow().bytes());
+    }
+
     private static byte[] image() {
         Mat image = Mat.zeros(160, 220, CvType.CV_8UC3);
         MatOfByte bytes = new MatOfByte();
