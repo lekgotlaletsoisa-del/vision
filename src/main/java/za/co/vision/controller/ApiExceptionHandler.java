@@ -17,6 +17,7 @@ import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import za.co.vision.service.VisionException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /** Maps expected failures to concise JSON errors without exposing internals or image bytes. */
 @RestControllerAdvice
@@ -25,6 +26,17 @@ public class ApiExceptionHandler {
 
     /** Creates the global API error adapter. */
     public ApiExceptionHandler() { }
+
+    /**
+     * Keeps missing static resources at HTTP 404 instead of misreporting a server failure.
+     * In particular, crawler discovery requests must not trigger the generic processing error.
+     * @param exception resource lookup failure
+     * @return non-cacheable 404 JSON without internal resource paths
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, String>> missingResource(NoResourceFoundException exception) {
+        return error(HttpStatus.NOT_FOUND, "The requested resource was not found.");
+    }
 
     /**
      * Preserves intentional HTTP statuses from the saved-result reader, especially missing versions.

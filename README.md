@@ -249,7 +249,7 @@ All geometry remains in the coordinate space described by `width`/`height`. For 
 
 For example, compare with a conservative morphology experiment using the same request and add `-F processingMode=MORPHOLOGY -F closeKernel=3 -F openKernel=1`. To test filled bright regions instead, use `-F processingMode=SEGMENTATION -F foreground=BRIGHT`. Optional filters affect every mode; omit them for the baseline.
 
-Expected errors return `{"status":"error","message":"..."}`: 400 for invalid images, missing parts or invalid controls; 413 for byte/pixel limits; 415 for non-multipart requests; 422 for contour complexity; 429 when processing slots are occupied. Unexpected failures are logged server-side and return a generic 500 message. Image bytes and filenames are never logged by application code.
+Expected errors return `{"status":"error","message":"..."}`: 400 for invalid images, missing parts or invalid controls; 413 for byte/pixel limits; 415 for non-multipart requests; 422 for contour complexity; 429 when processing slots are occupied. Missing static resources and unknown unmapped paths return 404 JSON rather than a processing failure. Unexpected failures are logged server-side and return a generic 500 message. Image bytes and filenames are never logged by application code.
 
 ### Read-only saved-result routes
 
@@ -346,6 +346,16 @@ From the project directory, run:
 The script runs Maven tests/build and warning-checked Javadoc, verifies the domain certificate is present, creates the service account if needed, installs the executable JAR atomically, checks that its bytes match the build artifact, installs/enables/restarts `vision.service`, and waits for successful application readiness. It installs the authentication snippets while preserving the selected mode, installs the hostname's Nginx configuration, runs `nginx -t`, reloads Nginx, and installs the certificate-renewal hook. `check-https.sh` then verifies the selected mode: a sign-in redirect when enabled, or HTTP 200 and public readiness when disabled. It leaves a previously deployed JAR at `/opt/vision/vision.jar.previous`. No commit or push is performed.
 
 The first deployment must stop any manually launched Vision process using port 8090 before starting the service. Future deployments use the service workflow directly. Service readiness failures stop deployment before activating the Nginx configuration; inspect logs and restore the previous JAR if appropriate. A failed Nginx configuration test prevents reloading; the running workers continue using their previous configuration. Correct the staged file before a later reload.
+
+### Crawler access and browsing-tool diagnosis
+
+`GET /robots.txt` and `HEAD /robots.txt` return HTTP 200 with a plain-text policy allowing public routes. This policy follows the existing public-site configuration; it does not bypass Nginx authentication when Authelia is enabled. Saved photographs and results remain accessible to anyone with site access, as described above. A crawler policy is advisory, not authorization.
+
+A missing-resource exception previously passed through the generic processing-error handler, causing `/robots.txt` and other nonexistent resources to return HTTP 500. The corrected handler returns 404 for genuinely missing resources, while the explicit robots file returns 200. This matters because [RFC 9309 section 2.3.1.4](https://www.rfc-editor.org/rfc/rfc9309.html#section-2.3.1.4) requires crawlers to assume complete disallow when robots retrieval has a server/network error. The robots error is a plausible contributor to browsing failures; a tool's generic access error alone cannot establish its exact cause. Cached crawler failures may also outlive a server correction.
+
+To diagnose an inaccessible site without guessing at proxy changes, compare direct HTTPS with the browser tool using a uniquely labelled query, then correlate timestamps in the Vision access/error logs. Verify public DNS with an independent resolver, TLS certificate/chain validation, TLS 1.2/1.3, effective authentication mode, and host firewall rules. If mobile data works and direct HTTPS succeeds, do not infer a general outage or remove working access controls. Requests absent from the access log may fail before HTTP, including upstream routing, TLS or client-side fetch policy. A direct request carrying a crawler User-Agent can check application filtering but does not reproduce the crawler's network path.
+
+Regression coverage checks robots GET/HEAD and MIME type, plus 404 responses for missing pages, images and API paths. The full Java suite now contains 57 tests. This correction changes no image processing, saved analyses or authentication selection.
 
 ### Operations and verification
 

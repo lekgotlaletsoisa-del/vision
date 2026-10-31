@@ -25,6 +25,25 @@ class VisionApiTests {
     private MockMvc mvc;
 
     @Test
+    void crawlerPolicyIsSuccessfulPlainTextForGetAndHead() throws Exception {
+        mvc.perform(get("/robots.txt")).andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_PLAIN))
+                .andExpect(content().string("User-agent: *\nAllow: /\n"));
+        mvc.perform(head("/robots.txt")).andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_PLAIN));
+    }
+
+    @Test
+    void missingResourcesReturnNotFoundRatherThanProcessingFailures() throws Exception {
+        for (String path : new String[]{"/missing-page", "/missing-image.png", "/api/vision/missing"}) {
+            mvc.perform(get(path)).andExpect(status().isNotFound())
+                    .andExpect(header().string("Cache-Control", "no-store"))
+                    .andExpect(jsonPath("$.status").value("error"))
+                    .andExpect(jsonPath("$.message").value("The requested resource was not found."));
+        }
+    }
+
+    @Test
     void dashboardAndReadinessRenderWithLoadedNatives() throws Exception {
         mvc.perform(get("/")).andExpect(status().isOk()).andExpect(view().name("index"))
                 .andExpect(content().string(containsString("Vision Lab")))
