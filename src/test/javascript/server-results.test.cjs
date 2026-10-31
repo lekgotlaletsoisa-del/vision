@@ -45,8 +45,15 @@ async function run() {
     const upgraded = harness({ storage, response: result, server: { settings: loader.settings } });
     await settle(); await settle();
     assert.equal(upgraded.requests.length, 1, 'Older matching analysis upgrades once without a new photo.');
-    assert.equal(upgraded.requests[0].body.parts.get('detectionMode')[0], 'ENHANCED');
-    assert.equal(saved.result.parameters.detectionMode, 'ENHANCED');
+    assert.equal(upgraded.requests[0].body.parts.get('detectionMode')[0], 'DENOISED');
+    assert.equal(saved.result.parameters.detectionMode, 'DENOISED');
+
+    saved = snapshot({ result: { ...result, parameters: { ...result.parameters, detectionMode: 'ENHANCED' } } });
+    const enhancedUpgrade = harness({ storage, response: result, server: { settings: loader.settings } });
+    await settle(); await settle();
+    assert.equal(enhancedUpgrade.requests.length, 1, 'The previous enhanced baseline also upgrades once.');
+    assert.equal(enhancedUpgrade.requests[0].body.parts.get('detectionMode')[0], 'DENOISED');
+    assert.equal(saved.result.parameters.detectionMode, 'DENOISED');
 
     saved = snapshot({ analysisCurrent: false });
     const pending = harness({ storage, response: result, server: { settings: loader.settings } }); await settle();

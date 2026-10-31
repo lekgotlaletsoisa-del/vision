@@ -50,6 +50,8 @@ public class VisionProcessingService {
     /**
      * Validates an encoded JPEG/PNG, runs Canny and the selected extraction mode, and encodes results.
      * ENHANCED compares guarded Canny trials and can retain long, low-area traces.
+     * DENOISED additionally compares an edge-preserving bilateral filter at the selected thresholds,
+     * falling back to the exact Gaussian result when noise/continuity guards fail.
      * Small-gap repair uses the existing closing stage only when conservative guards pass.
      * Explicit contour-source experiments are preserved. Geometry is measured once before inclusive
      * filtering, then retained contours receive stable area-sorted labels within this request.
@@ -100,6 +102,8 @@ public class VisionProcessingService {
             Imgproc.GaussianBlur(gray, blurred,
                     new Size(parameters.blurKernel(), parameters.blurKernel()), 0);
             var selection = EdgeRefinement.select(scope, blurred, parameters, properties.maxContours());
+            var filtering = EdgeRefinement.denoise(scope, gray, selection, parameters, properties.maxContours());
+            selection = filtering.selection();
             Mat edges = selection.edges();
             var stages = ContourBoundaries.stages(scope, blurred, edges, parameters.boundary());
             var repair = EdgeRefinement.repair(edges, stages.closed(), parameters, properties.maxContours(),
@@ -107,7 +111,8 @@ public class VisionProcessingService {
             Mat contourInput = repair.applied() ? stages.closed() : stages.active();
             String contourSource = repair.applied() ? "closed" : stages.source();
             var edgeDiagnostics = new EdgeDiagnostics(selection.low(), selection.high(), selection.minimumLength(),
-                    selection.minimumSpan(), repair.applied(), repair.reason(), selection.trials());
+                    selection.minimumSpan(), repair.applied(), repair.reason(), selection.trials(), filtering.diagnostics());
+            double minimumLength = selection.minimumLength(), minimumSpan = selection.minimumSpan();
             int boundaryPixelCount = Core.countNonZero(contourInput);
             List<MatOfPoint> contours = new ArrayList<>();
             try {
@@ -134,7 +139,7 @@ public class VisionProcessingService {
             }
             List<Candidate> candidates = measured.stream()
                     .filter(candidate -> parameters.filters().accepts(candidate.measurement(), parameters.minContourArea(),
-                            selection.minimumLength(), selection.minimumSpan()))
+                            minimumLength, minimumSpan))
                     .sorted(Comparator.comparingDouble((Candidate candidate) -> candidate.measurement().area())
                             .reversed().thenComparingInt(candidate -> candidate.measurement().boundingRectangle().y())
                             .thenComparingInt(candidate -> candidate.measurement().boundingRectangle().x()))

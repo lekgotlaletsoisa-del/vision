@@ -102,6 +102,24 @@ class VisionApiTests {
     }
 
     @Test
+    void denoisedProfileExplainsItsFilterAndKeepsLegacyEnhancedAvailable() throws Exception {
+        var processed = mvc.perform(multipart("/api/vision/process").file(image()).param("detectionMode", "DENOISED"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.parameters.detectionMode").value("DENOISED"))
+                .andExpect(jsonPath("$.edgeDiagnostics.denoising.filter").isString())
+                .andExpect(jsonPath("$.edgeDiagnostics.denoising.decision").isString())
+                .andExpect(jsonPath("$.edgeDiagnostics.trials[0].smoothing").value("GAUSSIAN")).andReturn();
+        String location = processed.getResponse().getHeader("Location");
+        mvc.perform(get(location)).andExpect(status().isOk())
+                .andExpect(content().string(containsString("Noise reduction")));
+        mvc.perform(get("/api/vision" + location + "/measurements")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.edgeDiagnostics.denoising.filter").isString());
+        mvc.perform(multipart("/api/vision/process").file(image()).param("detectionMode", "ENHANCED"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.parameters.detectionMode").value("ENHANCED"))
+                .andExpect(jsonPath("$.edgeDiagnostics.denoising").isEmpty())
+                .andExpect(jsonPath("$.edgeDiagnostics.trials", hasSize(4)));
+    }
+
+    @Test
     void controlsOverrideDefaults() throws Exception {
         mvc.perform(multipart("/api/vision/process").file(image())
                         .param("cannyLow", "10").param("cannyHigh", "40")

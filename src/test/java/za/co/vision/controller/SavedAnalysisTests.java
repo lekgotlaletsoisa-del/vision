@@ -158,6 +158,20 @@ class SavedAnalysisTests {
         assertArrayEquals(image(), store.original(saved.id()).orElseThrow().bytes());
     }
 
+    @Test
+    void enhancedArchivePredatingNoiseDiagnosticsLoadsWithGaussianTrialLabels() throws Exception {
+        var created = mvc.perform(multipart("/api/vision/process").file(new MockMultipartFile("image", image()))
+                .param("detectionMode", "ENHANCED")).andReturn();
+        var tree = (tools.jackson.databind.node.ObjectNode) mapper.readTree(created.getResponse().getContentAsByteArray());
+        var diagnostics = (tools.jackson.databind.node.ObjectNode) tree.get("edgeDiagnostics");
+        diagnostics.remove("denoising");
+        for (var trial : diagnostics.get("trials")) ((tools.jackson.databind.node.ObjectNode) trial).remove("smoothing");
+        var restored = mapper.treeToValue(tree, ProcessingResult.class);
+        assertEquals(za.co.vision.model.DetectionMode.ENHANCED, restored.parameters().detectionMode());
+        assertNull(restored.edgeDiagnostics().denoising());
+        assertTrue(restored.edgeDiagnostics().trials().stream().allMatch(t -> t.smoothing().equals("GAUSSIAN")));
+    }
+
     private static byte[] image() {
         Mat image = Mat.zeros(160, 220, CvType.CV_8UC3);
         MatOfByte bytes = new MatOfByte();

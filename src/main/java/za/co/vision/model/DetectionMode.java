@@ -5,5 +5,7 @@ public enum DetectionMode {
     /** Uses the exact supplied Canny thresholds, minimum area and contour-source options. */
     STANDARD,
     /** Compares bounded threshold trials, retains sustained traces and guards small-gap repair. */
-    ENHANCED
+    ENHANCED,
+    /** Adds a guarded bilateral comparison to ENHANCED; falls back to its Gaussian result. */
+    DENOISED
 }

@@ -3,7 +3,7 @@ package za.co.vision.model;
 /**
  * Explicit experiments for the source-resolution mask supplied to contour extraction.
  * Canny is always computed independently for the raw edge preview and edge-pixel count.
- * ENHANCED detection may conservatively select the closed comparison stage when mode is CANNY;
+ * ENHANCED/DENOISED detection may conservatively select the closed comparison stage when mode is CANNY;
  * the result always reports its actual contour source and repair decision.
  * @param mode CANNY by default; other sources must be explicitly selected
  * @param closeKernel odd closing kernel side in source pixels, 1–15; 1 disables closing
@@ -32,7 +32,7 @@ public record BoundaryOptions(Mode mode, int closeKernel, int openKernel, Foregr
     }
     /** Source of the contour extraction mask; none is an object recognizer. */
     public enum Mode {
-        /** Original Canny mask in STANDARD; ENHANCED may apply guarded small-gap closing. */
+        /** Original Canny mask in STANDARD; ENHANCED/DENOISED may apply guarded small-gap closing. */
         CANNY,
         /** Canny after closing only, before optional opening. */
         CANNY_CLOSED,
@@ -65,7 +65,7 @@ public record BoundaryOptions(Mode mode, int closeKernel, int openKernel, Foregr
     }
 
     /**
-     * Selects raw Canny in STANDARD, with morphology previews available to ENHANCED repair.
+     * Selects raw Canny in STANDARD, with morphology previews available to ENHANCED/DENOISED repair.
      * @return raw Canny options with experimental closing 3 and opening disabled
      */
     public static BoundaryOptions raw() {

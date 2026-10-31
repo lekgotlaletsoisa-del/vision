@@ -87,11 +87,11 @@ public class VisionController {
      * @param closeKernel optional experimental closing kernel, default 3 source pixels
      * @param openKernel optional experimental opening kernel, default 1 (disabled)
      * @param foreground optional brightness polarity for segmentation, BRIGHT by default
-     * @param kernelShape optional footprint; ELLIPSE for STANDARD, RECTANGLE for ENHANCED by default
+     * @param kernelShape optional footprint; ELLIPSE for STANDARD, RECTANGLE for ENHANCED/DENOISED by default
      * @param retrievalMode optional EXTERNAL (default) or TREE contour retrieval
      * @param chainMode optional SIMPLE (default) or NONE boundary storage
      * @param approximationPercent optional 0–10 percent of perimeter, default 1; diagnostic only
-     * @param detectionMode optional STANDARD (default) or ENHANCED automatic refinement
+     * @param detectionMode optional STANDARD (default), ENHANCED refinement, or DENOISED guarded bilateral comparison
      * @return non-cacheable JSON images and pixel measurements, with a durable result URL in Location
      * @throws IOException when the multipart image cannot be read
      * @throws IllegalArgumentException when processing parameters are invalid
@@ -131,7 +131,7 @@ public class VisionController {
                         Boolean.TRUE.equals(excludeBoundary)),
                 new BoundaryOptions(processingMode, closeKernel == null ? 3 : closeKernel,
                         openKernel == null ? 1 : openKernel, foreground,
-                        kernelShape == null && detectionMode == DetectionMode.ENHANCED ? BoundaryOptions.Shape.RECTANGLE : kernelShape),
+                        kernelShape == null && detectionMode != null && detectionMode != DetectionMode.STANDARD ? BoundaryOptions.Shape.RECTANGLE : kernelShape),
                 new ContourOptions(retrievalMode, chainMode, approximationPercent == null ? 1 : approximationPercent), detectionMode);
         if (image.getSize() > properties.maxUploadBytes()) {
             throw new VisionException(VisionException.Reason.TOO_LARGE, "Image exceeds the configured upload limit.");

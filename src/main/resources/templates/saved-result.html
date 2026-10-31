@@ -63,6 +63,9 @@
         <dt class="col-sm-3">Detection policy</dt><dd class="col-sm-9" th:text="${result.parameters.detectionMode}"></dd>
         <th:block th:if="${result.edgeDiagnostics != null}">
           <dt class="col-sm-3">Selected Canny / trace rescue</dt><dd class="col-sm-9" th:text="|Low ${result.edgeDiagnostics.cannyLow}, high ${result.edgeDiagnostics.cannyHigh}; alternative perimeter ≥ ${result.edgeDiagnostics.minimumTraceLength} px and span ≥ ${result.edgeDiagnostics.minimumTraceSpan} px (0 disables rescue)|"></dd>
+          <th:block th:if="${result.edgeDiagnostics.denoising != null}">
+            <dt class="col-sm-3">Noise reduction</dt><dd class="col-sm-9" th:text="|${result.edgeDiagnostics.denoising.filter}: ${result.edgeDiagnostics.denoising.decision}|"></dd>
+          </th:block>
           <dt class="col-sm-3">Automatic small-gap repair</dt><dd class="col-sm-9" th:text="${result.edgeDiagnostics.closingDecision}"></dd>
         </th:block>
         <dt class="col-sm-3">Canny baseline / Gaussian blur</dt><dd class="col-sm-9" th:text="|Low ${result.parameters.cannyLow}, high ${result.parameters.cannyHigh}; blur ${result.parameters.blurKernel} source pixels|"></dd>

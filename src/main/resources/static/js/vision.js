@@ -124,7 +124,7 @@
           if (value !== '' && value != null) payload.set(name, String(value));
         }
       }
-      payload.set('detectionMode', 'ENHANCED');
+      payload.set('detectionMode', 'DENOISED');
       const response = await fetch(form.action, { method: 'POST', body: payload, cache: 'no-store' });
       let data;
       try { data = await response.json(); }
@@ -170,7 +170,7 @@
       updatePreview();
       retainSession();
       if (saved.result.parameters && window.VisionServerResults
-          && (!resultLocation || saved.result.parameters.detectionMode !== 'ENHANCED')) {
+          && (!resultLocation || saved.result.parameters.detectionMode !== 'DENOISED')) {
         await processImage(photo, saved.result.parameters);
       }
     } catch {

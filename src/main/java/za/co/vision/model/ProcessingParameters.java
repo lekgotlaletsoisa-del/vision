@@ -5,7 +5,7 @@ package za.co.vision.model;
  * and L2 gradient magnitude; all geometry stays at the original image resolution.
  * @param cannyLow lower hysteresis threshold, from 0 to 255
  * @param cannyHigh upper hysteresis threshold, greater than the lower and at most 255
- * @param minContourArea inclusive minimum polygon area in square pixels; ENHANCED also admits sustained long traces
+ * @param minContourArea inclusive minimum polygon area in square pixels; ENHANCED/DENOISED also admits sustained long traces
  * @param blurKernel odd Gaussian kernel side length from 1 to 31; 1 disables smoothing
  * @param filters optional shape/maximum-area filters; null selects disabled additional filters
  * @param boundary contour-mask experiment; null selects the original Canny pipeline
