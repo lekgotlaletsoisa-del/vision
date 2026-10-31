@@ -21,6 +21,7 @@ import za.co.vision.model.ContourOptions;
 import za.co.vision.model.ProcessingResult;
 import za.co.vision.service.VisionException;
 import za.co.vision.service.VisionProcessingService;
+import za.co.vision.service.AnalysisStore;
 
 /** Thin MVC adapter for the dashboard, readiness and multipart processing API. */
 @Controller
@@ -28,17 +29,21 @@ public class VisionController {
     private final VisionProcessingService service;
     private final VisionProperties properties;
     private final OpenCvRuntime runtime;
+    private final AnalysisStore analyses;
 
     /**
      * Supplies the processing and presentation dependencies.
      * @param service Java OpenCV pipeline
      * @param properties validated defaults and resource limits
      * @param runtime loaded native runtime
+     * @param analyses durable successful-result storage shared across browsers
      */
-    public VisionController(VisionProcessingService service, VisionProperties properties, OpenCvRuntime runtime) {
+    public VisionController(VisionProcessingService service, VisionProperties properties, OpenCvRuntime runtime,
+                            AnalysisStore analyses) {
         this.service = service;
         this.properties = properties;
         this.runtime = runtime;
+        this.analyses = analyses;
     }
 
     /**
@@ -84,7 +89,7 @@ public class VisionController {
      * @param retrievalMode optional EXTERNAL (default) or TREE contour retrieval
      * @param chainMode optional SIMPLE (default) or NONE boundary storage
      * @param approximationPercent optional 0–10 percent of perimeter, default 1; diagnostic only
-     * @return non-cacheable JSON images and pixel measurements
+     * @return non-cacheable JSON images and pixel measurements, with a durable result URL in Location
      * @throws IOException when the multipart image cannot be read
      * @throws IllegalArgumentException when processing parameters are invalid
      * @throws VisionException when image validation or processing budgets refuse the request
@@ -126,6 +131,10 @@ public class VisionController {
         if (image.getSize() > properties.maxUploadBytes()) {
             throw new VisionException(VisionException.Reason.TOO_LARGE, "Image exceeds the configured upload limit.");
         }
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.process(image.getBytes(), parameters));
+        byte[] photo = image.getBytes();
+        var result = service.process(photo, parameters);
+        var saved = analyses.save(photo, result);
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .header("Location", "/results/" + saved.id()).body(result);
     }
 }

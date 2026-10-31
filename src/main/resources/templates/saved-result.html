@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-bs-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Saved analysis · Vision Lab</title>
+  <link rel="icon" type="image/svg+xml" th:href="@{/favicon.svg(v=1)}">
+  <link rel="stylesheet" th:href="@{/vendor/bootstrap-5.3.8.min.css}">
+  <link rel="stylesheet" th:href="@{/css/vision.css(v=8)}">
+</head>
+<body>
+<header class="lab-header"><div class="container-fluid lab-width"><a class="brand" th:href="@{/}"><img class="brand-symbol" th:src="@{/favicon.svg(v=1)}" width="34" height="34" alt="">Vision Lab</a></div></header>
+<main class="container-fluid lab-width py-4">
+  <section class="card p-4" th:if="${saved == null}">
+    <h1 class="h4">No saved analysis available</h1>
+    <p>This result has not been saved or is no longer retained. Open the dashboard and process a photograph. An older browser-only photo is published once when its saved session is restored.</p>
+    <a th:href="@{/}">Open dashboard</a>
+  </section>
+  <th:block th:if="${saved != null}">
+    <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+      <div><h1 class="h4">Saved analysis</h1><p class="small text-secondary mb-1">Saved <time th:text="${saved.savedAt}"></time> · <span th:text="|${result.width} × ${result.height} source pixels|"></span></p>
+        <p class="small mb-0">Contour source: <strong th:text="${result.contourSource}"></strong> · <span th:text="|${result.contourCount} retained / ${result.detectedContourCount} detected|"></span></p></div>
+      <nav class="d-flex flex-wrap gap-3 small" aria-label="Saved-result resources">
+        <a th:href="@{/}">Dashboard</a><a th:href="@{/results/latest}">Latest result</a>
+        <a id="permalink" th:href="@{/results/{id}(id=${saved.id},view=${view},contour=${selected})}">Link to this result</a>
+        <a id="measurements-json" th:href="@{/api/vision/results/{id}/measurements(id=${saved.id})}">All measurements (JSON)</a>
+        <a id="original-photo" th:href="@{/results/{id}/original(id=${saved.id})}">Original photograph</a>
+      </nav>
+    </div>
+    <p class="small text-secondary">This read-only page contains the saved photograph, processing stages, actual settings and measurements. It works without browser storage or JavaScript. Saved results are shared with anyone who can access Vision Lab.</p>
+    <article class="card preview-card mb-3">
+      <form class="d-flex flex-wrap align-items-end gap-3 p-3" method="get" th:action="@{/results/{id}(id=${saved.id})}">
+        <div><label for="saved-view" class="form-label small">Processing stage</label><select class="form-select form-select-sm" name="view" id="saved-view">
+          <option value="photo" th:selected="${view == 'photo'}">Final contours + geometry</option>
+          <option value="source" th:selected="${view == 'source'}">Original photograph</option>
+          <option value="raw" th:selected="${view == 'raw'}">Raw Canny</option>
+          <option value="closed" th:selected="${view == 'closed'}">Canny after closing</option>
+          <option value="opened" th:selected="${view == 'opened'}">Canny after optional opening</option>
+          <option value="mask" th:selected="${view == 'mask'}">Active extraction mask</option>
+        </select></div>
+        <div><label for="saved-contour" class="form-label small">Contour</label><select class="form-select form-select-sm" name="contour" id="saved-contour">
+          <option value="">All retained contours</option><option th:each="c : ${result.contours}" th:value="${c.id}" th:text="|Contour #${c.id}|" th:selected="${selected != null and selected == c.id}"></option>
+        </select></div><button class="btn btn-sm btn-outline-success" type="submit">Show result</button>
+      </form>
+      <div class="image-stage">
+        <img id="saved-preview" th:src="@{/results/{id}/images/{kind}(id=${saved.id},kind=${baseImage})}" th:alt="|Saved ${view} view; contours supplied by ${result.contourSource}|">
+        <svg id="geometry-overlay" xmlns="http://www.w3.org/2000/svg" th:if="${view == 'photo'}" th:attr="viewBox=|0 0 ${result.previewWidth} ${result.previewHeight}|" aria-label="Saved contours, rotated rectangles, centroids and long axes">
+          <g th:attr="transform=|scale(${result.previewWidth * 1.0 / result.width} ${result.previewHeight * 1.0 / result.height}) translate(0.5 0.5)|">
+            <g th:each="c : ${contours}" th:attr="data-contour-id=${c.measurement.id}" fill="none" stroke-linejoin="round">
+              <path th:attr="d=${c.path}" stroke="#19b83c" stroke-width="3" vector-effect="non-scaling-stroke"></path>
+              <polygon th:attr="points=${c.vertices}" stroke="#cf8b00" stroke-width="2.5" vector-effect="non-scaling-stroke"></polygon>
+              <circle th:attr="cx=${c.measurement.centre.x},cy=${c.measurement.centre.y},r=${5.0 * result.width / result.previewWidth}" stroke="#c4289c" stroke-width="2.5" vector-effect="non-scaling-stroke"></circle>
+              <line th:if="${c.measurement.orientationAxis != null}" th:attr="x1=${c.measurement.orientationAxis.start.x},y1=${c.measurement.orientationAxis.start.y},x2=${c.measurement.orientationAxis.end.x},y2=${c.measurement.orientationAxis.end.y}" stroke="#e64e20" stroke-width="2.5" vector-effect="non-scaling-stroke"></line>
+              <text th:attr="x=${c.measurement.centre.x},y=${c.measurement.centre.y},dx=${9.0 * result.width / result.previewWidth},dy=${-9.0 * result.width / result.previewWidth},font-size=${17.0 * result.width / result.previewWidth}" fill="#125c2b" stroke="#fff" stroke-width="1" paint-order="stroke" font-family="system-ui, sans-serif" font-weight="700" th:text="|#${c.measurement.id}|"></text>
+            </g>
+          </g>
+        </svg>
+      </div>
+      <p class="small text-secondary p-3 mb-0">Green: source trace · amber: rotated rectangle · magenta: centroid · orange: long axis. Blue marks remain raw Canny. A contour does not establish a complete physical object boundary.</p>
+    </article>
+    <section class="card p-3 mb-3" aria-labelledby="settings-title"><h2 id="settings-title" class="h6">Actual processing settings</h2>
+      <dl class="row small mb-0">
+        <dt class="col-sm-3">Canny / Gaussian blur</dt><dd class="col-sm-9" th:text="|Low ${result.parameters.cannyLow}, high ${result.parameters.cannyHigh}; blur ${result.parameters.blurKernel} source pixels|"></dd>
+        <dt class="col-sm-3">Contour source / morphology</dt><dd class="col-sm-9" th:text="|${result.parameters.boundary.mode}; ${result.parameters.boundary.shape}; closing ${result.parameters.boundary.closeKernel}, opening ${result.parameters.boundary.openKernel}; brightness ${result.parameters.boundary.foreground}|"></dd>
+        <dt class="col-sm-3">Retrieval / chain / approximation</dt><dd class="col-sm-9" th:text="|${result.parameters.tracing.retrieval} / ${result.parameters.tracing.chain}; epsilon ${result.parameters.tracing.approximationPercent}% of closed perimeter|"></dd>
+        <dt class="col-sm-3">Area filters</dt><dd class="col-sm-9" th:text="|Minimum ${result.parameters.minContourArea} px²; maximum ${result.parameters.filters.maxContourArea == null ? 'disabled' : result.parameters.filters.maxContourArea}|"></dd>
+        <dt class="col-sm-3">Shape filters</dt><dd class="col-sm-9" th:text="|Aspect ${result.parameters.filters.minAspectRatio == null ? 'no minimum' : result.parameters.filters.minAspectRatio} to ${result.parameters.filters.maxAspectRatio == null ? 'no maximum' : result.parameters.filters.maxAspectRatio}; minimum circularity ${result.parameters.filters.minCircularity}, solidity ${result.parameters.filters.minSolidity}; exclude image border ${result.parameters.filters.excludeBoundary}|"></dd>
+        <dt class="col-sm-3">Source-mask counts</dt><dd class="col-sm-9" th:text="|Raw Canny ${result.edgePixelCount}; extraction mask ${result.boundaryPixelCount} foreground pixels|"></dd>
+      </dl>
+    </section>
+    <section class="card p-3 mb-3"><h2 class="h6">Processing-stage comparison</h2><div class="row g-3">
+      <figure class="col-12 col-md-6 col-xl-4 mb-0"><a th:href="@{/results/{id}/images/original(id=${saved.id})}"><img class="img-fluid rounded border" th:src="@{/results/{id}/images/original(id=${saved.id})}" alt="Original unprocessed photograph" loading="lazy"></a><figcaption class="small mt-2">Original photograph</figcaption></figure>
+      <figure class="col-12 col-md-6 col-xl-4 mb-0" th:each="stage : ${result.stages}"><a th:href="@{/results/{id}/images/{kind}(id=${saved.id},kind=${stage.id})}"><img class="img-fluid rounded border" th:src="@{/results/{id}/images/{kind}(id=${saved.id},kind=${stage.id})}" th:alt="${stage.label}" loading="lazy"></a><figcaption class="small mt-2" th:text="|${stage.label} · ${stage.pixelCount} source-resolution foreground pixels|"></figcaption></figure>
+      <figure class="col-12 col-md-6 col-xl-4 mb-0"><a th:href="@{/results/{id}/images/overlay(id=${saved.id})}"><img class="img-fluid rounded border" th:src="@{/results/{id}/images/overlay(id=${saved.id})}" alt="Final retained contours and raw Canny edges over the photograph" loading="lazy"></a><figcaption class="small mt-2">Final retained contours over the photograph</figcaption></figure>
+    </div></section>
+    <section class="card p-3"><h2 class="h6">Contour measurements</h2><p class="small text-secondary">Lengths are source-image pixels; areas are pixel polygons, not physical object areas. Angles follow the long axis clockwise from +X, modulo 180°. Squares have ambiguous axes. Hierarchy links are zero-based extraction indices, including filtered traces; -1 means absent.</p>
+      <p class="small" th:if="${result.contourCount == 0}">No contours retained by the saved filters.</p>
+      <div class="table-responsive"><table class="table table-sm" id="saved-measurements"><thead><tr><th>ID</th><th>Contour area px²</th><th>Rotated-box area px² / fit</th><th>Perimeter px</th><th>Centroid X, Y</th><th>Raster bounds X, Y / W × H</th><th>Rotated box W × H / angle</th><th>Aspect / circularity / solidity / extent</th><th>Touches border</th><th>Hierarchy / points</th><th>Approximation</th></tr></thead>
+        <tbody><tr th:each="c : ${contours}" th:attr="data-contour-id=${c.measurement.id}">
+          <td th:text="|#${c.measurement.id}|"></td><td th:text="${c.measurement.area}"></td>
+          <td><span th:if="${c.diagnostic != null}" th:text="|${c.diagnostic.rotatedRectangleArea} / ${c.diagnostic.rotatedExtent}|"></span></td>
+          <td th:text="${c.measurement.perimeter}"></td><td th:text="|${c.measurement.centre.x}, ${c.measurement.centre.y}|"></td>
+          <td th:text="|${c.measurement.boundingRectangle.x}, ${c.measurement.boundingRectangle.y} / ${c.measurement.boundingRectangle.width} × ${c.measurement.boundingRectangle.height}|"></td>
+          <td th:text="|${c.measurement.rotatedRectangle.width} × ${c.measurement.rotatedRectangle.height} / ${c.measurement.rotatedRectangle.orientationDegrees}°|"></td>
+          <td th:text="|${c.measurement.aspectRatio} / ${c.measurement.circularity} / ${c.measurement.solidity} / ${c.measurement.extent}|"></td>
+          <td th:text="${c.measurement.touchesImageBoundary}"></td>
+          <td><span th:if="${c.diagnostic != null}" th:text="|Index ${c.diagnostic.sourceIndex}; parent ${c.diagnostic.parentIndex}; child ${c.diagnostic.firstChildIndex}; previous ${c.diagnostic.previousIndex}; next ${c.diagnostic.nextIndex}; depth ${c.diagnostic.depth}; hole ${c.diagnostic.hole}; ${c.diagnostic.pointCount} points|"></span></td>
+          <td><span th:if="${c.diagnostic != null}" th:text="|${c.diagnostic.approximationVertices} vertices; epsilon ${c.diagnostic.approximationEpsilon} px; area ${c.diagnostic.approximationArea} px²; perimeter ${c.diagnostic.approximationPerimeter} px|"></span></td>
+        </tr></tbody></table></div>
+    </section>
+  </th:block>
+</main>
+</body>
+</html>

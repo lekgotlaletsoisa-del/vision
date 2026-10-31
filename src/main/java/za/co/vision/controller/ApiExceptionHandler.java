@@ -16,6 +16,7 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import za.co.vision.service.VisionException;
+import org.springframework.web.server.ResponseStatusException;
 
 /** Maps expected failures to concise JSON errors without exposing internals or image bytes. */
 @RestControllerAdvice
@@ -24,6 +25,16 @@ public class ApiExceptionHandler {
 
     /** Creates the global API error adapter. */
     public ApiExceptionHandler() { }
+
+    /**
+     * Preserves intentional HTTP statuses from the saved-result reader, especially missing versions.
+     * @param exception safe HTTP refusal
+     * @return non-cacheable status and JSON error message
+     */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, String>> responseStatus(ResponseStatusException exception) {
+        return error(HttpStatus.valueOf(exception.getStatusCode().value()), exception.getReason());
+    }
 
     /**
      * Maps processing refusals to 400, 413, 422 or 429.

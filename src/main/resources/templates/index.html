@@ -12,7 +12,8 @@
   <link rel="stylesheet" th:href="@{/vendor/bootstrap-5.3.8.min.css}">
   <link rel="stylesheet" th:href="@{/css/vision.css(v=7)}">
   <script defer th:src="@{/js/session-store.js(v=1)}"></script>
-  <script defer th:src="@{/js/vision.js(v=11)}"></script>
+  <script defer th:src="@{/js/server-results.js(v=1)}"></script>
+  <script defer th:src="@{/js/vision.js(v=12)}"></script>
 </head>
 <body>
 <header class="lab-header">
@@ -90,7 +91,9 @@
           </details>
           <button type="submit" class="btn btn-primary w-100 mt-4" id="process-button"><span id="process-spinner" class="spinner-border spinner-border-sm me-2" hidden aria-hidden="true"></span><span id="process-label">Process image</span></button>
           <button type="button" class="btn btn-outline-secondary btn-sm w-100 mt-2" id="compare-raw" disabled>Compare raw Canny</button>
-          <p class="small text-secondary mt-3 mb-0" id="retention-status" role="status">Photo and analysis stay in this browser until replaced.</p>
+          <button type="button" class="btn btn-outline-secondary btn-sm w-100 mt-2" id="load-server-result">Load latest from server</button>
+          <p class="small mt-3 mb-0"><a th:href="@{/results/latest}" id="latest-result-link" target="_blank" rel="noopener">Latest saved result · readable by ChatGPT ↗</a></p>
+          <p class="small text-secondary mt-3 mb-0" id="retention-status" role="status">Processed photographs and results are saved on the server and available to anyone with site access. A local copy also stays in this browser.</p>
         </div>
       </form>
     </aside>
@@ -108,6 +111,7 @@
             <label><input class="form-check-input" type="checkbox" id="show-approximation">Approximation</label>
           </fieldset>
           <span class="contour-count" id="contour-count" aria-live="polite"></span>
+          <a id="saved-result-link" class="full-size-link" target="_blank" rel="noopener" hidden>Saved result / share with ChatGPT ↗</a>
           <a id="full-size-link" class="full-size-link" target="_blank" rel="noopener" hidden>Open image ↗</a>
         </div>
         <div class="comparison-toolbar">

@@ -18,7 +18,7 @@ import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
+@SpringBootTest(properties = "vision.results.directory=${java.io.tmpdir}/vision-tests-${random.uuid}")
 @AutoConfigureMockMvc
 class VisionApiTests {
     @Autowired

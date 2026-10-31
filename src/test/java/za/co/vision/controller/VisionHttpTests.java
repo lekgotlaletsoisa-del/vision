@@ -18,7 +18,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Exercises the real embedded multipart parser, which MockMvc bypasses. */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "vision.results.directory=${java.io.tmpdir}/vision-tests-${random.uuid}")
 class VisionHttpTests {
     @LocalServerPort
     private int port;

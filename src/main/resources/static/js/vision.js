@@ -36,6 +36,8 @@
   let capturing = false;
   let lastAnalysis = null;
   let analysisCurrent = false;
+  let resultLocation = null;
+  let analysisRevision = 0;
   let restoring = false;
   let saveAfterRestore = false;
   let settingsChanged = false;
@@ -54,7 +56,7 @@
     if (restoring) { saveAfterRestore = true; return; }
     if (!selectedFile || !window.VisionSessionStore) return;
     const snapshot = {
-      version: 1, photo: selectedFile, photoName: selectedFile.name, result: lastAnalysis, analysisCurrent,
+      version: 1, photo: selectedFile, photoName: selectedFile.name, result: lastAnalysis, analysisCurrent, resultLocation,
       settings: Object.fromEntries(settingIds.map(id => [id, id === 'excludeBoundary'
         ? document.getElementById(id).checked : document.getElementById(id).value])),
       display: { view: view.value, selection: selection.value, overlayDefaultsVersion: 1,
@@ -63,7 +65,7 @@
     };
     // Capture state now and serialize writes, so a late save cannot overwrite a newer photo/result.
     saves = saves.then(() => window.VisionSessionStore.save(snapshot)).then(() => {
-      document.getElementById('retention-status').textContent = 'Photo and analysis saved in this browser.';
+      document.getElementById('retention-status').textContent = resultLocation ? 'Photo and analysis saved on the server and in this browser.' : 'Photo and analysis saved in this browser.';
     }).catch(() => {
       document.getElementById('retention-status').textContent = 'Browser storage is unavailable or full. Changes remain in this page only; the last saved session is unchanged.';
     });
@@ -165,6 +167,14 @@
     if (url) { preview.src = url; fullSize.href = url; }
     else { preview.removeAttribute('src'); fullSize.removeAttribute('href'); }
     if (resultData && baseImage) exportPreview(baseImage);
+    const savedLink = document.getElementById('saved-result-link');
+    const safeLocation = /^\/results\/[0-9a-f-]{36}$/.test(resultLocation || '');
+    savedLink.hidden = !safeLocation;
+    if (safeLocation) {
+      const savedView = analysisCurrent ? view.value : 'photo';
+      savedLink.href = resultLocation + '?view=' + encodeURIComponent(savedView) + (selection.value ? '&contour=' + encodeURIComponent(selection.value) : '');
+      savedLink.textContent = analysisCurrent ? 'Saved result / share with ChatGPT ↗' : 'Previous analysis / share with ChatGPT ↗';
+    } else savedLink.removeAttribute('href');
     const stage = lastAnalysis?.stages?.find(item => item.id === view.value);
     document.getElementById('stage-note').textContent = stage
       ? `${stage.label} · ${format(stage.pixelCount)} foreground pixels at original resolution. Binary preview; contours come from ${lastAnalysis.contourSource}.`
@@ -426,7 +436,7 @@
     body.append(fragment);
   }
 
-  async function displayAnalysis(data, expectedRevision = previewRevision) {
+  async function displayAnalysis(data, expectedRevision = previewRevision, expectedAnalysisRevision = analysisRevision) {
     const nextUrls = {};
     try {
       for (const [key, field] of Object.entries({ original: 'originalImage', edges: 'edgesImage',
@@ -439,7 +449,7 @@
       Object.values(nextUrls).forEach(url => URL.revokeObjectURL(url));
       throw new Error('The result image could not be displayed. Previous analysis is kept.');
     }
-    if (expectedRevision !== previewRevision) {
+    if (expectedRevision !== previewRevision || expectedAnalysisRevision !== analysisRevision) {
       Object.values(nextUrls).forEach(url => URL.revokeObjectURL(url));
       return false;
     }
@@ -466,17 +476,32 @@
     return true;
   }
 
-  async function restoreSession() {
-    if (!window.VisionSessionStore) return;
+  async function restoreSession(preferServer = false) {
+    const startedRevision = previewRevision;
+    const startedAnalysisRevision = analysisRevision;
+    if (preferServer) settingsChanged = false;
+    let publishLocal = false;
+    let fromServer = false;
     try {
-      const saved = await window.VisionSessionStore.load();
+      let saved;
+      if (!preferServer && window.VisionSessionStore) {
+        try { saved = await window.VisionSessionStore.load(); }
+        catch { document.getElementById('retention-status').textContent = 'Local browser storage could not be restored. Checking the server copy.'; }
+      }
+      if ((!saved || preferServer) && window.VisionServerResults) {
+        saved = await window.VisionServerResults.loadLatest();
+        fromServer = Boolean(saved);
+      }
+      if (preferServer && !saved) { message('No server analysis is saved yet. Process a photograph first.'); return; }
       // A photo chosen while storage was opening always takes precedence over saved state.
-      if (!saved || saved.version !== 1 || !(saved.photo instanceof Blob) || previewRevision || processing) return;
+      if (!saved || saved.version !== 1 || !(saved.photo instanceof Blob) || processing
+          || (preferServer ? previewRevision !== startedRevision : previewRevision !== 0)) return;
       restoring = true;
       const photo = new File([saved.photo], saved.photoName || 'saved-photo.jpg', { type: saved.photo.type });
       if (!await selectImage(photo, true)) return;
-      if (saved.result && !await displayAnalysis(saved.result)) return;
+      if (saved.result && !await displayAnalysis(saved.result, previewRevision, startedAnalysisRevision)) return;
       analysisCurrent = Boolean(saved.result && saved.analysisCurrent);
+      resultLocation = saved.resultLocation || null;
       if (!settingsChanged && saved.settings) for (const id of settingIds) {
         if (!(id in saved.settings)) continue;
         const input = document.getElementById(id);
@@ -508,13 +533,19 @@
       document.getElementById('analysis-note').hidden = !saved.result || analysisCurrent;
       document.getElementById('process-label').textContent = analysisCurrent ? 'Reprocess image' : 'Process image';
       compare.disabled = !saved.result;
-      message(analysisCurrent ? 'Saved photo and analysis restored.' : saved.result
+      if (fromServer) saveAfterRestore = true;
+      publishLocal = Boolean(analysisCurrent && !resultLocation && saved.result?.parameters && window.VisionServerResults);
+      message(analysisCurrent ? (fromServer ? 'Server photo and analysis restored.' : 'Saved photo and analysis restored.') : saved.result
         ? 'Saved photo restored. Previous analysis is kept until this photo is processed.' : 'Saved photo restored. Ready to process.');
     } catch {
       document.getElementById('retention-status').textContent = 'Saved session could not be restored. You can still take or upload a photo.';
     } finally {
       restoring = false;
       if (saveAfterRestore) { saveAfterRestore = false; retainSession(); }
+    }
+    if (publishLocal && !processing) {
+      // Migrate only a matching successful local photo. Pending replacement photos keep their previous analysis separate.
+      await processImage(undefined, lastAnalysis.parameters);
     }
   }
 
@@ -523,7 +554,8 @@
     await processImage();
   });
   compare.addEventListener('click', () => processImage('CANNY'));
-  async function processImage(modeOverride) {
+  document.getElementById('load-server-result').addEventListener('click', () => { if (!processing) void restoreSession(true); });
+  async function processImage(modeOverride, parametersOverride) {
     if (processing) return;
     if (!selectedFile) {
       message('Take a photo or upload an image first.', 'error');
@@ -531,15 +563,22 @@
       return;
     }
     validateThresholds();
-    if (!form.reportValidity()) return;
+    if (!parametersOverride && !form.reportValidity()) return;
     const payload = new FormData(form);
     for (const name of ['maxContourArea', 'minAspectRatio', 'maxAspectRatio']) {
       if (!document.getElementById(name).value) payload.delete(name);
+    }
+    if (parametersOverride) {
+      for (const [name, value] of Object.entries(window.VisionServerResults.settings(parametersOverride))) {
+        if (value === '') payload.delete(name);
+        else payload.set(name, String(value));
+      }
     }
     if (modeOverride) payload.set('processingMode', modeOverride);
     // Replace any empty/stale upload part when the current image came from the camera.
     payload.set('image', selectedFile, selectedFile.name || 'camera-photo.jpg');
     processing = true;
+    ++analysisRevision;
     for (const element of form.elements) element.disabled = true;
     results.setAttribute('aria-busy', 'true');
     document.getElementById('process-spinner').hidden = false;
@@ -552,13 +591,14 @@
       catch { throw new Error(`Could not load results (HTTP ${response.status}).`); }
       if (!response.ok) throw new Error(data.message || `Processing failed (HTTP ${response.status}).`);
       if (!await displayAnalysis(data)) return;
+      resultLocation = response.headers?.get?.('Location') || null;
       analysisCurrent = true;
       document.getElementById('analysis-note').hidden = true;
       [showEdges, showContours, ...annotations].forEach(input => { input.checked = true; });
       view.value = 'photo';
       updatePreview();
       retainSession();
-      message(data.contourCount ? 'Contours measured. Selection reset: IDs belong to this result. Compare raw, closed and opened stages; blue edges always show raw Canny.'
+      message(data.contourCount ? (parametersOverride ? 'Browser photo published to the server. ' : '') + 'Contours measured. Selection reset: IDs belong to this result. Compare raw, closed and opened stages; blue edges always show raw Canny.'
         : 'No contours retained. Review the extraction mask, thresholds and filters.');
       if (window.matchMedia('(max-width: 991px)').matches) {
         results.scrollIntoView({ behavior: 'instant', block: 'start' });

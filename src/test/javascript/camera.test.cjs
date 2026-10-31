@@ -80,6 +80,7 @@ function harness(options = {}) {
     };
     const window = new Element();
     window.VisionSessionStore = options.storage;
+    window.VisionServerResults = options.server;
     window.isSecureContext = options.secure !== false;
     window.matchMedia = () => ({ matches: true });
     const context = { document, window, Blob, File, Uint8Array, Date,

@@ -2,7 +2,7 @@
 (() => {
   let connection;
 
-  /** Opens the origin-local store. Photographs never become server-side files. */
+  /** Opens the origin-local backup; successful analyses also have a durable server copy. */
   function database() {
     if (!connection) connection = new Promise((resolve, reject) => {
       if (!window.indexedDB) { reject(new Error('Browser storage is unavailable.')); return; }
