@@ -89,7 +89,8 @@ class VisionApiTests {
                 {"blurKernel", "4"}, {"blurKernel", "text"}, {"minContourArea", "-1"},
                 {"cannyLow", "200"}, {"maxContourArea", "50"}, {"maxAspectRatio", "0.5"},
                 {"minAspectRatio", "Infinity"}, {"minCircularity", "1.1"}, {"minSolidity", "NaN"},
-                {"closeKernel", "4"}, {"openKernel", "17"}, {"processingMode", "YOLO"}, {"foreground", "RED"}}) {
+                {"closeKernel", "4"}, {"openKernel", "17"}, {"processingMode", "YOLO"}, {"foreground", "RED"}, {"kernelShape", "CROSS"}, {"retrievalMode", "LIST"},
+                {"chainMode", "FAST"}, {"approximationPercent", "NaN"}, {"approximationPercent", "11"}}) {
             mvc.perform(multipart("/api/vision/process").file(image()).param(control[0], control[1]))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isString());
         }
@@ -117,9 +118,27 @@ class VisionApiTests {
         var response = mvc.perform(get("/")).andExpect(status().isOk());
         for (String id : new String[]{"image", "cannyLow", "cannyHigh", "show-edges", "show-contours",
                 "show-boxes", "show-centroids", "show-ids", "show-axes", "geometry-overlay", "original-view",
-                "processingMode", "compare-raw", "preview-view", "contour-selection", "excludeBoundary"}) {
+                "processingMode", "compare-raw", "preview-view", "contour-selection", "excludeBoundary", "stage-note", "kernelShape",
+                "retrievalMode", "chainMode", "approximationPercent", "show-approximation"}) {
             response.andExpect(content().string(containsString("id=\"" + id + "\"")));
         }
+    }
+
+    @Test
+    void closedSourceAndTracingOptionsReturnStageMasksAndMatchingDiagnostics() throws Exception {
+        mvc.perform(multipart("/api/vision/process").file(image())
+                        .param("processingMode", "CANNY_CLOSED").param("kernelShape", "RECTANGLE")
+                        .param("retrievalMode", "TREE").param("chainMode", "NONE")
+                        .param("approximationPercent", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.contourSource").value("closed"))
+                .andExpect(jsonPath("$.stages", hasSize(3)))
+                .andExpect(jsonPath("$.stages[0].id").value("raw"))
+                .andExpect(jsonPath("$.stages[1].image").value(startsWith("data:image/png;base64,")))
+                .andExpect(jsonPath("$.parameters.tracing.chain").value("NONE"))
+                .andExpect(jsonPath("$.contourDiagnostics[0].id").value(1))
+                .andExpect(jsonPath("$.contourDiagnostics[0].rotatedExtent").isNumber())
+                .andExpect(jsonPath("$.contourDiagnostics[0].approximationVertices").value(4));
     }
 
     @Test

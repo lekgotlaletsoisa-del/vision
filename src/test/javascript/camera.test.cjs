@@ -54,7 +54,7 @@ function harness(options = {}) {
     const stream = { getTracks: () => [track], getVideoTracks: () => [track] };
     get('cannyLow').value = '50';
     get('cannyHigh').value = '150';
-    get('show-ids').checked = true;
+    for (const id of ['show-edges', 'show-contours', 'show-boxes', 'show-centroids', 'show-ids', 'show-axes']) get(id).checked = true;
     get('preview-view').value = 'photo';
     get('process-form').dataset = { maxBytes: '10485760', maxPixels: '16000000' };
     get('process-form').elements = ['image', 'camera-button', 'cannyLow', 'cannyHigh', 'process-button'].map(get);
@@ -79,6 +79,7 @@ function harness(options = {}) {
         return element;
     };
     const window = new Element();
+    window.VisionSessionStore = options.storage;
     window.isSecureContext = options.secure !== false;
     window.matchMedia = () => ({ matches: true });
     const context = { document, window, Blob, File, Uint8Array, Date,
@@ -88,11 +89,14 @@ function harness(options = {}) {
         } } },
         URL: { createObjectURL: blob => { const url = `blob:${urls.length}`; urls.push({ url, blob }); return url; }, revokeObjectURL() {} },
         atob: data => Buffer.from(data, 'base64').toString('binary'),
-        createImageBitmap: async () => ({ width: 1280, height: 720, close() {} }),
+        createImageBitmap: async file => options.decode ? options.decode(file) : ({ width: 1280, height: 720, close() {} }),
         FormData: class { constructor() { this.parts = new Map(); } set(name, ...value) { this.parts.set(name, value); } delete(name) { this.parts.delete(name); } },
         XMLSerializer: class { serializeToString(element) { return JSON.stringify(element); } },
-        Image: class { async decode() {} },
-        fetch: async (url, request) => { requests.push(request); return { ok: true, json: async () => response }; }
+        Image: class { async decode() { if (options.decodeResult) await options.decodeResult(); } },
+        fetch: async (url, request) => {
+            requests.push(request);
+            return options.request ? options.request(request, response) : { ok: true, json: async () => response };
+        }
     };
     new vm.Script(source, { filename: 'vision.js' }).runInNewContext(context);
     return { get, requests, streams, track, stream, canvasCopies, urls, document, window,
@@ -118,8 +122,9 @@ async function run() {
     assert.ok(capture.track.stops > 0);
     assert.equal(capture.get('camera-video').srcObject, null);
     assert.equal(capture.get('camera-dialog').open, false);
-    assert.equal(capture.get('show-edges').checked, true);
-    assert.equal(capture.get('show-contours').checked, true);
+    for (const id of ['show-edges', 'show-contours', 'show-boxes', 'show-centroids', 'show-ids', 'show-axes']) {
+        assert.equal(capture.get(id).checked, true);
+    }
     await capture.shutter();
     assert.equal(capture.requests.length, 1, 'A second click after capture must not submit again.');
     await capture.get('process-form').emit('submit', { preventDefault() {} });
@@ -226,8 +231,9 @@ async function run() {
     assert.ok(visual.urls.some(item => item.blob.type === 'image/svg+xml'), 'Open image export includes the displayed annotations.');
     await visual.get('compare-raw').emit('click');
     assert.equal(visual.requests[1].body.parts.get('processingMode')[0], 'CANNY');
-    assert.equal(visual.get('measurements-body').children[0].children[0].cells.length, 12);
+    assert.equal(visual.get('measurements-body').children[0].children[0].cells.length, 15);
     console.log('Preview checks passed: legacy response compatibility, source-coordinate scaling, independent annotations, contour selection, original/mask views, counts, measurements and raw comparison.');
 }
 
-run();
+module.exports = { harness };
+if (require.main === module) run();

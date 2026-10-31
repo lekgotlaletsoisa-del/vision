@@ -23,6 +23,7 @@
   const compare = document.getElementById('compare-raw');
   const annotations = ['show-boxes', 'show-centroids', 'show-ids', 'show-axes'].map(id => document.getElementById(id));
   const body = document.getElementById('measurements-body');
+  const showApproximation = document.getElementById('show-approximation');
   let previewUrl;
   let previewRevision = 0;
   let processing = false;
@@ -33,12 +34,39 @@
   let cameraStream = null;
   let cameraRevision = 0;
   let capturing = false;
+  let lastAnalysis = null;
+  let analysisCurrent = false;
+  let restoring = false;
+  let saveAfterRestore = false;
+  let settingsChanged = false;
+  let saves = Promise.resolve();
+  const settingIds = ['cannyLow', 'cannyHigh', 'minContourArea', 'blurKernel', 'maxContourArea',
+    'minAspectRatio', 'maxAspectRatio', 'minCircularity', 'minSolidity', 'excludeBoundary',
+    'processingMode', 'closeKernel', 'openKernel', 'foreground', 'kernelShape', 'retrievalMode', 'chainMode', 'approximationPercent'];
   const format = value => Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
   const coordinate = point => `${format(point.x)}, ${format(point.y)}`;
 
   function message(text, state = 'ready') {
     status.textContent = text;
     status.dataset.state = state;
+  }
+  function retainSession() {
+    if (restoring) { saveAfterRestore = true; return; }
+    if (!selectedFile || !window.VisionSessionStore) return;
+    const snapshot = {
+      version: 1, photo: selectedFile, photoName: selectedFile.name, result: lastAnalysis, analysisCurrent,
+      settings: Object.fromEntries(settingIds.map(id => [id, id === 'excludeBoundary'
+        ? document.getElementById(id).checked : document.getElementById(id).value])),
+      display: { view: view.value, selection: selection.value, overlayDefaultsVersion: 1,
+        checks: [showEdges, showContours, ...annotations].map(input => input.checked),
+        approximation: showApproximation.checked, measurementsOpen: document.getElementById('measurements-details').open }
+    };
+    // Capture state now and serialize writes, so a late save cannot overwrite a newer photo/result.
+    saves = saves.then(() => window.VisionSessionStore.save(snapshot)).then(() => {
+      document.getElementById('retention-status').textContent = 'Photo and analysis saved in this browser.';
+    }).catch(() => {
+      document.getElementById('retention-status').textContent = 'Browser storage is unavailable or full. Changes remain in this page only; the last saved session is unchanged.';
+    });
   }
   function releaseResults() {
     if (resultUrls) Object.values(resultUrls).forEach(url => URL.revokeObjectURL(url));
@@ -62,7 +90,7 @@
   function drawGeometry() {
     overlay.replaceChildren();
     // SVGElement does not consistently reflect the HTML hidden property.
-    overlay.toggleAttribute('hidden', !resultData || view.value === 'mask');
+    overlay.toggleAttribute('hidden', !resultData || view.value !== 'photo');
     if (overlay.hasAttribute('hidden')) return;
     const data = resultData;
     const sx = data.previewWidth / data.width, sy = data.previewHeight / data.height;
@@ -80,6 +108,8 @@
     for (const item of data.contours) {
       if (selection.value && String(item.id) !== selection.value) continue;
       if (showContours.checked && paths.has(item.id)) stroke('path', { d: paths.get(item.id) }, '#19b83c');
+      const diagnostic = data.contourDiagnostics?.find(d => d.id === item.id);
+      if (showApproximation.checked && diagnostic) stroke('path', { d: diagnostic.approximationPath }, '#7e3fc5');
       if (boxes) stroke('polygon', { points: item.rotatedRectangle.vertices.map(p => `${p.x},${p.y}`).join(' ') }, '#cf8b00');
       if (axes && item.orientationAxis) {
         const axis = item.orientationAxis;
@@ -109,11 +139,17 @@
   function updatePreview() {
     let url = previewUrl;
     let description = 'Source photograph';
-    if (resultData) {
+    let baseImage = null;
+    if (view.value === 'source' && previewUrl) {
+      url = previewUrl;
+      overlay.setAttribute('hidden', ''); overlay.replaceChildren();
+    } else if (resultData) {
       drawGeometry();
+      const stage = resultData.stages?.find(item => item.id === view.value);
       const mask = view.value === 'mask';
-      url = mask ? resultUrls.mask : showEdges.checked ? resultUrls.edges : resultUrls.original;
-      description = mask ? 'Active binary contour extraction mask' : 'Photograph with selected geometry overlays';
+      url = stage ? resultUrls[stage.id] : mask ? resultUrls.mask : showEdges.checked ? resultUrls.edges : resultUrls.original;
+      baseImage = stage ? stage.image : mask ? resultData.boundaryMaskImage : showEdges.checked ? resultData.edgesImage : resultData.originalImage;
+      description = stage ? stage.label : mask ? 'Active binary contour extraction mask' : 'Photograph with selected geometry overlays';
     } else if (resultUrls) {
       const edges = showEdges.checked;
       const contours = showContours.checked;
@@ -128,22 +164,28 @@
     preview.alt = description;
     if (url) { preview.src = url; fullSize.href = url; }
     else { preview.removeAttribute('src'); fullSize.removeAttribute('href'); }
-    if (resultData) exportPreview(view.value === 'mask' ? resultData.boundaryMaskImage
-      : showEdges.checked ? resultData.edgesImage : resultData.originalImage);
+    if (resultData && baseImage) exportPreview(baseImage);
+    const stage = lastAnalysis?.stages?.find(item => item.id === view.value);
+    document.getElementById('stage-note').textContent = stage
+      ? `${stage.label} · ${format(stage.pixelCount)} foreground pixels at original resolution. Binary preview; contours come from ${lastAnalysis.contourSource}.`
+      : view.value === 'source' ? 'Unprocessed photograph. No analysis overlays.'
+      : lastAnalysis ? `Contours supplied by ${lastAnalysis.contourSource || lastAnalysis.parameters?.boundary?.mode || 'raw Canny'} · ${format(lastAnalysis.boundaryPixelCount ?? lastAnalysis.edgePixelCount)} source mask pixels. Blue edges always show raw Canny.`
+      : 'Select a processing stage after processing a photograph.';
   }
-  showEdges.addEventListener('change', updatePreview);
-  showContours.addEventListener('change', updatePreview);
-  for (const control of [...annotations, view, selection]) control.addEventListener('change', updatePreview);
+  function changeDisplay() { updatePreview(); retainSession(); }
+  for (const control of [showEdges, showContours, showApproximation, ...annotations, view]) control.addEventListener('change', changeDisplay);
+  selection.addEventListener('change', () => { if (lastAnalysis) showMeasurements(lastAnalysis); changeDisplay(); });
+  document.getElementById('measurements-details').addEventListener('toggle', retainSession);
   document.getElementById('original-view').addEventListener('click', () => {
-    view.value = 'photo';
-    for (const input of [showEdges, showContours, ...annotations]) input.checked = false;
-    updatePreview();
+    view.value = analysisCurrent ? 'photo' : 'source';
+    for (const input of [showEdges, showContours, showApproximation, ...annotations]) input.checked = false;
+    changeDisplay();
   });
 
   function emptyMeasurements(text) {
     body.replaceChildren();
     const cell = body.insertRow().insertCell();
-    cell.colSpan = 12;
+    cell.colSpan = 15;
     cell.className = 'empty-table';
     cell.textContent = text;
   }
@@ -154,9 +196,11 @@
   }
   for (const input of [low, high]) input.addEventListener('input', validateThresholds);
   form.addEventListener('input', event => {
+    settingsChanged = true;
     if (event.target !== fileInput && resultUrls && !processing) {
       message('Settings changed. Reprocess to update.');
     }
+    if (event.target !== fileInput) retainSession();
   });
   form.addEventListener('invalid', event => {
     const details = event.target.closest('details');
@@ -284,19 +328,8 @@
     if (file) void selectImage(file);
   });
 
-  async function selectImage(file) {
+  async function selectImage(file, restoringPhoto = false) {
     const revision = ++previewRevision;
-    selectedFile = null;
-    releaseResults();
-    compare.disabled = true;
-    document.getElementById('result-mode').textContent = '';
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    previewUrl = undefined;
-    updatePreview();
-    emptyMeasurements('No results yet.');
-    document.getElementById('contour-count').textContent = '';
-    document.getElementById('measurements-details').open = false;
-    document.getElementById('process-label').textContent = 'Process image';
     if (file.size > Number(form.dataset.maxBytes)) {
       fileInput.value = '';
       button.disabled = false;
@@ -315,10 +348,18 @@
         message('Photo exceeds the pixel limit. Use a lower camera resolution or a smaller image.', 'error');
         return false;
       }
+      const previousPreview = previewUrl;
       previewUrl = URL.createObjectURL(file);
+      if (previousPreview) URL.revokeObjectURL(previousPreview);
       selectedFile = file;
+      analysisCurrent = false;
+      if (lastAnalysis) view.value = 'source';
+      document.getElementById('analysis-note').hidden = !lastAnalysis;
+      compare.disabled = !lastAnalysis;
+      document.getElementById('process-label').textContent = 'Process image';
       updatePreview();
-      message('Ready to process.');
+      message(lastAnalysis ? 'New photo ready. Previous analysis is kept until this photo is processed.' : 'Ready to process.');
+      if (!restoringPhoto) retainSession();
       return true;
     } catch {
       if (revision !== previewRevision) return false;
@@ -331,10 +372,20 @@
   }
 
   function showMeasurements(data) {
+    const selected = data.contours.find(item => String(item.id) === selection.value);
+    const inspector = document.getElementById('contour-inspector');
+    inspector.hidden = !selected;
+    if (selected) {
+      const diagnostic = data.contourDiagnostics?.find(item => item.id === selected.id);
+      inspector.textContent = `Contour #${selected.id} · contour area ${format(selected.area)} px² · centroid (${coordinate(selected.centre)}) · long axis ${selected.rotatedRectangle.orientationDegrees == null ? 'undefined' : format(selected.rotatedRectangle.orientationDegrees) + '° clockwise from +X'}.`
+        + (diagnostic ? ` Rotated-box area ${format(diagnostic.rotatedRectangleArea)} px² · contour/box fit ${diagnostic.rotatedExtent == null ? 'undefined' : format(diagnostic.rotatedExtent * 100) + '%'}. Trace index ${diagnostic.sourceIndex}, parent ${diagnostic.parentIndex}, depth ${diagnostic.depth}${diagnostic.hole ? ' (hole trace)' : ''}; ${diagnostic.pointCount} stored points → ${diagnostic.approximationVertices} approximation vertices.` : '');
+    }
     if (!data.contours.length) { emptyMeasurements('No contours retained.'); return; }
     body.replaceChildren();
     const fragment = document.createDocumentFragment();
     for (const item of data.contours) {
+      if (selection.value && String(item.id) !== selection.value) continue;
+      const diagnostic = data.contourDiagnostics?.find(d => d.id === item.id);
       const row = document.createElement('tr');
       const box = item.rotatedRectangle;
       const bounds = item.boundingRectangle;
@@ -346,7 +397,10 @@
         box.orientationDegrees === null ? 'Undefined' : format(box.orientationDegrees),
         item.aspectRatio == null ? 'Undefined' : format(item.aspectRatio),
         ...[item.circularity, item.solidity, item.extent].map(value => value == null ? '—' : format(value)),
-        item.touchesImageBoundary == null ? '—' : item.touchesImageBoundary ? 'Yes' : 'No'
+        item.touchesImageBoundary == null ? '—' : item.touchesImageBoundary ? 'Yes' : 'No',
+        diagnostic ? `${format(diagnostic.rotatedRectangleArea)} px² / ${diagnostic.rotatedExtent == null ? 'undefined' : format(diagnostic.rotatedExtent * 100) + '%'}` : '—',
+        diagnostic ? `index ${diagnostic.sourceIndex} · depth ${diagnostic.depth}${diagnostic.hole ? ' (hole trace)' : ''} · parent ${diagnostic.parentIndex} · child ${diagnostic.firstChildIndex} · prev ${diagnostic.previousIndex} · next ${diagnostic.nextIndex} · ${diagnostic.pointCount} points` : '—',
+        diagnostic ? `${diagnostic.approximationVertices} vertices · ε ${format(diagnostic.approximationEpsilon)} px · area ${format(diagnostic.approximationArea)} px² · perimeter ${format(diagnostic.approximationPerimeter)} px` : '—'
       ];
       for (const value of values) {
         const cell = document.createElement('td');
@@ -370,6 +424,98 @@
       fragment.append(row);
     }
     body.append(fragment);
+  }
+
+  async function displayAnalysis(data, expectedRevision = previewRevision) {
+    const nextUrls = {};
+    try {
+      for (const [key, field] of Object.entries({ original: 'originalImage', edges: 'edgesImage',
+        contours: 'contoursImage', overlay: 'overlayImage', mask: 'boundaryMaskImage' })) {
+        if (data[field]) nextUrls[key] = imageUrl(data[field]);
+      }
+      for (const stage of data.stages || []) nextUrls[stage.id] = imageUrl(stage.image);
+      const image = new Image(); image.src = nextUrls.overlay; await image.decode();
+    } catch {
+      Object.values(nextUrls).forEach(url => URL.revokeObjectURL(url));
+      throw new Error('The result image could not be displayed. Previous analysis is kept.');
+    }
+    if (expectedRevision !== previewRevision) {
+      Object.values(nextUrls).forEach(url => URL.revokeObjectURL(url));
+      return false;
+    }
+    releaseResults();
+    resultUrls = nextUrls;
+    resultData = Array.isArray(data.contourDrawings) ? data : null;
+    lastAnalysis = data;
+    selection.replaceChildren();
+    const all = document.createElement('option');
+    all.value = ''; all.textContent = 'All retained contours'; selection.append(all);
+    for (const item of data.contours) {
+      const option = document.createElement('option');
+      option.value = String(item.id); option.textContent = `Contour #${item.id}`; selection.append(option);
+    }
+    selection.value = '';
+    for (const option of view.options || []) {
+      if (['raw', 'closed', 'opened'].includes(option.value)) option.disabled = !data.stages?.some(stage => stage.id === option.value);
+    }
+    document.getElementById('contour-count').textContent = `${data.contourCount} retained / ${data.detectedContourCount ?? data.contourCount} detected`;
+    const mode = data.parameters?.boundary?.mode || 'CANNY';
+    const modeLabel = { CANNY: 'Raw Canny result', CANNY_CLOSED: 'Canny after closing result', MORPHOLOGY: 'Experimental morphology result', SEGMENTATION: 'Experimental segmentation result' };
+    document.getElementById('result-mode').textContent = `${modeLabel[mode] || mode} · contours: ${data.contourSource || mode} · ${data.parameters?.tracing?.retrieval || 'EXTERNAL'} / ${data.parameters?.tracing?.chain || 'SIMPLE'}`;
+    showMeasurements(data);
+    return true;
+  }
+
+  async function restoreSession() {
+    if (!window.VisionSessionStore) return;
+    try {
+      const saved = await window.VisionSessionStore.load();
+      // A photo chosen while storage was opening always takes precedence over saved state.
+      if (!saved || saved.version !== 1 || !(saved.photo instanceof Blob) || previewRevision || processing) return;
+      restoring = true;
+      const photo = new File([saved.photo], saved.photoName || 'saved-photo.jpg', { type: saved.photo.type });
+      if (!await selectImage(photo, true)) return;
+      if (saved.result && !await displayAnalysis(saved.result)) return;
+      analysisCurrent = Boolean(saved.result && saved.analysisCurrent);
+      if (!settingsChanged && saved.settings) for (const id of settingIds) {
+        if (!(id in saved.settings)) continue;
+        const input = document.getElementById(id);
+        if (id === 'excludeBoundary') input.checked = Boolean(saved.settings[id]);
+        else input.value = saved.settings[id];
+      }
+      const display = saved.display;
+      if (display) {
+        showApproximation.checked = Boolean(display.approximation);
+        view.value = display.view;
+        selection.value = display.selection;
+        if (display.overlayDefaultsVersion === 1 && Array.isArray(display.checks)) {
+          [showEdges, showContours, ...annotations].forEach((input, i) => { input.checked = Boolean(display.checks[i]); });
+        } else {
+          // Apply the new defaults once to snapshots saved before all overlays started enabled.
+          [showEdges, showContours, ...annotations].forEach(input => { input.checked = true; });
+          saveAfterRestore = true;
+        }
+        document.getElementById('measurements-details').open = Boolean(display.measurementsOpen);
+      }
+      if (analysisCurrent) {
+        if (!saved.result.stages || !display?.view) view.value = 'photo';
+        const overlays = [showEdges, showContours, ...annotations];
+        if (!overlays.some(input => input.checked)) overlays.forEach(input => { input.checked = true; });
+      }
+      validateThresholds();
+      if (lastAnalysis) showMeasurements(lastAnalysis);
+      updatePreview();
+      document.getElementById('analysis-note').hidden = !saved.result || analysisCurrent;
+      document.getElementById('process-label').textContent = analysisCurrent ? 'Reprocess image' : 'Process image';
+      compare.disabled = !saved.result;
+      message(analysisCurrent ? 'Saved photo and analysis restored.' : saved.result
+        ? 'Saved photo restored. Previous analysis is kept until this photo is processed.' : 'Saved photo restored. Ready to process.');
+    } catch {
+      document.getElementById('retention-status').textContent = 'Saved session could not be restored. You can still take or upload a photo.';
+    } finally {
+      restoring = false;
+      if (saveAfterRestore) { saveAfterRestore = false; retainSession(); }
+    }
   }
 
   form.addEventListener('submit', async event => {
@@ -405,47 +551,20 @@
       try { data = await response.json(); }
       catch { throw new Error(`Could not load results (HTTP ${response.status}).`); }
       if (!response.ok) throw new Error(data.message || `Processing failed (HTTP ${response.status}).`);
-      // Await the overlaid image decoding before replacing the source preview.
-      // A decode failure must be visible, rather than leaving the source photo labelled "Done".
-      const nextUrls = {
-        original: imageUrl(data.originalImage), edges: imageUrl(data.edgesImage),
-        contours: imageUrl(data.contoursImage), overlay: imageUrl(data.overlayImage)
-      };
-      if (data.boundaryMaskImage) nextUrls.mask = imageUrl(data.boundaryMaskImage);
-      try {
-        const image = new Image();
-        image.src = nextUrls.overlay;
-        await image.decode();
-      } catch {
-        Object.values(nextUrls).forEach(url => URL.revokeObjectURL(url));
-        throw new Error('The result image could not be displayed. Try a smaller photograph.');
-      }
-      releaseResults();
-      resultUrls = nextUrls;
-      resultData = Array.isArray(data.contourDrawings) ? data : null;
-      selection.replaceChildren();
-      const all = document.createElement('option');
-      all.value = ''; all.textContent = 'All retained contours'; selection.append(all);
-      for (const item of data.contours) {
-        const option = document.createElement('option');
-        option.value = String(item.id); option.textContent = `Contour #${item.id}`; selection.append(option);
-      }
-      selection.value = '';
-      showEdges.checked = true;
-      showContours.checked = true;
+      if (!await displayAnalysis(data)) return;
+      analysisCurrent = true;
+      document.getElementById('analysis-note').hidden = true;
+      [showEdges, showContours, ...annotations].forEach(input => { input.checked = true; });
+      view.value = 'photo';
       updatePreview();
-      if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = undefined; }
-      document.getElementById('contour-count').textContent = `${data.contourCount} retained / ${data.detectedContourCount ?? data.contourCount} detected`;
-      const mode = data.parameters?.boundary?.mode || 'CANNY';
-      document.getElementById('result-mode').textContent = mode === 'CANNY' ? 'Raw Canny result' : `Experimental ${mode.toLowerCase()} result`;
-      showMeasurements(data);
-      message(data.contourCount ? 'Contours measured. Blue edges always show raw Canny; use Extraction mask to inspect the active contour source.'
+      retainSession();
+      message(data.contourCount ? 'Contours measured. Selection reset: IDs belong to this result. Compare raw, closed and opened stages; blue edges always show raw Canny.'
         : 'No contours retained. Review the extraction mask, thresholds and filters.');
       if (window.matchMedia('(max-width: 991px)').matches) {
         results.scrollIntoView({ behavior: 'instant', block: 'start' });
       }
     } catch (error) {
-      message(`${error.message}${resultUrls ? ' Previous result shown.' : ''}`, 'error');
+      message(`${error.message}${resultUrls ? ' Previous analysis is still available in Analysis + overlays.' : ''}`, 'error');
     } finally {
       processing = false;
       for (const element of form.elements) element.disabled = false;
@@ -455,4 +574,5 @@
       document.getElementById('process-label').textContent = 'Reprocess image';
     }
   }
+  void restoreSession();
 })();

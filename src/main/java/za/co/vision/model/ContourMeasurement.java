@@ -3,7 +3,7 @@ package za.co.vision.model;
 import java.util.List;
 
 /**
- * Immutable geometry for one retained external contour; no native objects escape.
+ * Immutable geometry for one retained contour; no native objects escape.
  * Coordinates use image origin at top left, X rightwards and Y downwards.
  * @param id one-based ID matching the label in the overlay, sorted by decreasing area
  * @param area polygon area in px², not the count of enclosed raster pixels

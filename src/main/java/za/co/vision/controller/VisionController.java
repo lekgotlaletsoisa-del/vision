@@ -17,6 +17,7 @@ import za.co.vision.config.VisionProperties;
 import za.co.vision.model.ProcessingParameters;
 import za.co.vision.model.ContourFilters;
 import za.co.vision.model.BoundaryOptions;
+import za.co.vision.model.ContourOptions;
 import za.co.vision.model.ProcessingResult;
 import za.co.vision.service.VisionException;
 import za.co.vision.service.VisionProcessingService;
@@ -79,6 +80,10 @@ public class VisionController {
      * @param closeKernel optional experimental closing kernel, default 3 source pixels
      * @param openKernel optional experimental opening kernel, default 1 (disabled)
      * @param foreground optional brightness polarity for segmentation, BRIGHT by default
+     * @param kernelShape optional RECTANGLE or ELLIPSE (default) footprint
+     * @param retrievalMode optional EXTERNAL (default) or TREE contour retrieval
+     * @param chainMode optional SIMPLE (default) or NONE boundary storage
+     * @param approximationPercent optional 0–10 percent of perimeter, default 1; diagnostic only
      * @return non-cacheable JSON images and pixel measurements
      * @throws IOException when the multipart image cannot be read
      * @throws IllegalArgumentException when processing parameters are invalid
@@ -101,7 +106,11 @@ public class VisionController {
             @RequestParam(required = false) BoundaryOptions.Mode processingMode,
             @RequestParam(required = false) Integer closeKernel,
             @RequestParam(required = false) Integer openKernel,
-            @RequestParam(required = false) BoundaryOptions.Foreground foreground) throws IOException {
+            @RequestParam(required = false) BoundaryOptions.Foreground foreground,
+            @RequestParam(required = false) BoundaryOptions.Shape kernelShape,
+            @RequestParam(required = false) ContourOptions.Retrieval retrievalMode,
+            @RequestParam(required = false) ContourOptions.Chain chainMode,
+            @RequestParam(required = false) Double approximationPercent) throws IOException {
         var defaults = properties.defaults();
         var parameters = new ProcessingParameters(
                 cannyLow == null ? defaults.cannyLow() : cannyLow,
@@ -112,7 +121,8 @@ public class VisionController {
                         minCircularity == null ? 0 : minCircularity, minSolidity == null ? 0 : minSolidity,
                         Boolean.TRUE.equals(excludeBoundary)),
                 new BoundaryOptions(processingMode, closeKernel == null ? 3 : closeKernel,
-                        openKernel == null ? 1 : openKernel, foreground));
+                        openKernel == null ? 1 : openKernel, foreground, kernelShape),
+                new ContourOptions(retrievalMode, chainMode, approximationPercent == null ? 1 : approximationPercent));
         if (image.getSize() > properties.maxUploadBytes()) {
             throw new VisionException(VisionException.Reason.TOO_LARGE, "Image exceeds the configured upload limit.");
         }

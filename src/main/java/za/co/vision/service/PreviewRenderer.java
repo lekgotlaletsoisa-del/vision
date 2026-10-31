@@ -120,6 +120,16 @@ final class PreviewRenderer {
         }
     }
 
+    /** Bounded binary PNG, with no stroke thickening; geometry/counts use the source mask. */
+    static String maskPreview(Mat image, int width, int height) {
+        try (MatScope scope = new MatScope()) {
+            Mat reduced = scope.own(new Mat());
+            Imgproc.resize(image, reduced, new Size(width, height), 0, 0, Imgproc.INTER_AREA);
+            Imgproc.threshold(reduced, reduced, 0, 255, Imgproc.THRESH_BINARY);
+            return png(reduced);
+        }
+    }
+
     private static String png(Mat image) {
         try (MatScope scope = new MatScope()) {
             MatOfByte output = scope.own(new MatOfByte());

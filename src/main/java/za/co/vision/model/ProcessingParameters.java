@@ -9,10 +9,24 @@ package za.co.vision.model;
  * @param blurKernel odd Gaussian kernel side length from 1 to 31; 1 disables smoothing
  * @param filters optional shape/maximum-area filters; null selects disabled additional filters
  * @param boundary contour-mask experiment; null selects the original Canny pipeline
+ * @param tracing contour retrieval, chain storage and diagnostic approximation options
  */
 public record ProcessingParameters(double cannyLow, double cannyHigh,
                                    double minContourArea, int blurKernel, ContourFilters filters,
-                                   BoundaryOptions boundary) {
+                                   BoundaryOptions boundary, ContourOptions tracing) {
+    /**
+     * Preserves existing callers with default contour tracing.
+     * @param cannyLow lower threshold
+     * @param cannyHigh upper threshold
+     * @param minContourArea minimum area in px²
+     * @param blurKernel Gaussian kernel side
+     * @param filters optional geometry filters
+     * @param boundary contour source and morphology
+     */
+    public ProcessingParameters(double cannyLow, double cannyHigh, double minContourArea, int blurKernel,
+                                ContourFilters filters, BoundaryOptions boundary) {
+        this(cannyLow, cannyHigh, minContourArea, blurKernel, filters, boundary, ContourOptions.defaults());
+    }
     /**
      * Preserves the original Java constructor and raw minimum-area filtering behavior.
      * @param cannyLow lower threshold
@@ -43,6 +57,7 @@ public record ProcessingParameters(double cannyLow, double cannyHigh,
     public ProcessingParameters {
         filters = filters == null ? ContourFilters.none() : filters;
         boundary = boundary == null ? BoundaryOptions.raw() : boundary;
+        tracing = tracing == null ? ContourOptions.defaults() : tracing;
         if (!Double.isFinite(cannyLow) || !Double.isFinite(cannyHigh)
                 || cannyLow < 0 || cannyHigh > 255 || cannyLow >= cannyHigh) {
             throw new IllegalArgumentException("Canny thresholds must satisfy 0 ≤ low < high ≤ 255.");

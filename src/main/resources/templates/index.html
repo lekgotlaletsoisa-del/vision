@@ -11,7 +11,8 @@
   <link rel="apple-touch-icon" sizes="180x180" th:href="@{/apple-touch-icon.png(v=1)}">
   <link rel="stylesheet" th:href="@{/vendor/bootstrap-5.3.8.min.css}">
   <link rel="stylesheet" th:href="@{/css/vision.css(v=7)}">
-  <script defer th:src="@{/js/vision.js(v=7)}"></script>
+  <script defer th:src="@{/js/session-store.js(v=1)}"></script>
+  <script defer th:src="@{/js/vision.js(v=11)}"></script>
 </head>
 <body>
 <header class="lab-header">
@@ -63,19 +64,33 @@
             <label for="processingMode" class="form-label control-label mt-3">Contour source</label>
             <select class="form-select form-select-sm" id="processingMode" name="processingMode">
               <option value="CANNY" selected>Raw Canny (default)</option>
-              <option value="MORPHOLOGY">Experimental: edge morphology</option>
+              <option value="CANNY_CLOSED">Canny after closing only</option>
+              <option value="MORPHOLOGY">Experimental: edge closing + opening</option>
               <option value="SEGMENTATION">Experimental: brightness regions</option>
             </select>
+            <label for="kernelShape" class="form-label control-label mt-3">Structuring element</label>
+            <select class="form-select form-select-sm" id="kernelShape" name="kernelShape"><option value="ELLIPSE">Ellipse (existing default)</option><option value="RECTANGLE">Rectangle</option></select>
             <label for="closeKernel" class="form-label control-label mt-3">Closing kernel</label>
             <input class="form-control" type="number" id="closeKernel" name="closeKernel" min="1" max="15" step="2" value="3" required>
             <label for="openKernel" class="form-label control-label mt-3">Opening kernel</label>
             <input class="form-control" type="number" id="openKernel" name="openKernel" min="1" max="15" step="2" value="1" required>
             <label for="foreground" class="form-label control-label mt-3">Brightness foreground</label>
             <select class="form-select form-select-sm" id="foreground" name="foreground"><option value="BRIGHT">Brighter regions</option><option value="DARK">Darker regions</option></select>
-            <p class="small text-secondary mt-2">Kernels: odd source-pixel sizes; 1 disables the operation. Ignored by raw Canny. Closing may join objects to grout. Opening may erase thin edges. Brightness regions use Otsu segmentation, not object recognition.</p>
+            <p class="small text-secondary mt-2">Kernels: odd source-pixel sizes; 1 disables the operation. The stage previews always show these experiments; raw Canny measurements stay unchanged. Closing may join objects to grout. Opening may erase thin edges. Brightness regions use Otsu segmentation, not object recognition.</p>
+          </details>
+          <details class="advanced-controls mt-3">
+            <summary>Contour tracing</summary>
+            <label for="retrievalMode" class="form-label control-label mt-3">Retrieval mode</label>
+            <select class="form-select form-select-sm" id="retrievalMode" name="retrievalMode"><option value="EXTERNAL">RETR_EXTERNAL · outermost</option><option value="TREE">RETR_TREE · nested hierarchy</option></select>
+            <label for="chainMode" class="form-label control-label mt-3">Boundary points</label>
+            <select class="form-select form-select-sm" id="chainMode" name="chainMode"><option value="SIMPLE">CHAIN_APPROX_SIMPLE</option><option value="NONE">CHAIN_APPROX_NONE</option></select>
+            <label for="approximationPercent" class="form-label control-label mt-3">Approximation epsilon <span class="unit">% of perimeter</span></label>
+            <input class="form-control" type="number" id="approximationPercent" name="approximationPercent" min="0" max="10" step="any" value="1" required>
+            <p class="small text-secondary mt-2">TREE includes holes and often both sides of Canny outlines. Approximation is a separate purple overlay; filters and geometry use the original trace.</p>
           </details>
           <button type="submit" class="btn btn-primary w-100 mt-4" id="process-button"><span id="process-spinner" class="spinner-border spinner-border-sm me-2" hidden aria-hidden="true"></span><span id="process-label">Process image</span></button>
           <button type="button" class="btn btn-outline-secondary btn-sm w-100 mt-2" id="compare-raw" disabled>Compare raw Canny</button>
+          <p class="small text-secondary mt-3 mb-0" id="retention-status" role="status">Photo and analysis stay in this browser until replaced.</p>
         </div>
       </form>
     </aside>
@@ -86,22 +101,24 @@
             <legend class="visually-hidden">Show overlays</legend>
             <label><input class="form-check-input" type="checkbox" id="show-edges" checked><span class="legend-dot edges-dot" aria-hidden="true"></span>Edges</label>
             <label><input class="form-check-input" type="checkbox" id="show-contours" checked><span class="legend-dot contours-dot" aria-hidden="true"></span>Contours</label>
-            <label><input class="form-check-input" type="checkbox" id="show-boxes"><span class="legend-dot boxes-dot" aria-hidden="true"></span>Boxes</label>
-            <label><input class="form-check-input" type="checkbox" id="show-centroids"><span class="legend-dot centroids-dot" aria-hidden="true"></span>Centroids</label>
+            <label><input class="form-check-input" type="checkbox" id="show-boxes" checked><span class="legend-dot boxes-dot" aria-hidden="true"></span>Boxes</label>
+            <label><input class="form-check-input" type="checkbox" id="show-centroids" checked><span class="legend-dot centroids-dot" aria-hidden="true"></span>Centroids</label>
             <label><input class="form-check-input" type="checkbox" id="show-ids" checked>IDs</label>
-            <label><input class="form-check-input" type="checkbox" id="show-axes"><span class="legend-dot axes-dot" aria-hidden="true"></span>Long axes</label>
+            <label><input class="form-check-input" type="checkbox" id="show-axes" checked><span class="legend-dot axes-dot" aria-hidden="true"></span>Long axes</label>
+            <label><input class="form-check-input" type="checkbox" id="show-approximation">Approximation</label>
           </fieldset>
           <span class="contour-count" id="contour-count" aria-live="polite"></span>
           <a id="full-size-link" class="full-size-link" target="_blank" rel="noopener" hidden>Open image ↗</a>
         </div>
         <div class="comparison-toolbar">
           <label for="preview-view" class="visually-hidden">Preview view</label>
-          <select id="preview-view" class="form-select form-select-sm"><option value="photo">Photograph + overlays</option><option value="mask">Extraction mask</option></select>
+          <select id="preview-view" class="form-select form-select-sm"><option value="photo">5 · Final filtered contours + geometry</option><option value="source">1 · Original / current photograph</option><option value="raw">2 · Raw Canny mask</option><option value="closed">3 · Canny after closing</option><option value="opened">4 · Canny after optional opening</option><option value="mask">Active extraction mask</option></select>
           <label for="contour-selection" class="visually-hidden">Selected contour</label>
           <select id="contour-selection" class="form-select form-select-sm"><option value="">All retained contours</option></select>
           <button type="button" class="btn btn-sm btn-outline-secondary" id="original-view">Original only</button>
           <span id="result-mode" class="small text-secondary" aria-live="polite"></span>
         </div>
+        <p id="stage-note" class="small text-secondary px-3 mb-2" aria-live="polite">Select a processing stage after processing a photograph.</p>
         <div class="image-stage">
           <p class="image-placeholder" id="image-placeholder">Take a photo to begin.</p>
           <img id="preview-image" alt="Source photograph" hidden>
@@ -111,7 +128,10 @@
       </article>
       <details class="card measurements-card mt-3" id="measurements-details">
         <summary>Measurements <span>px / px²</span></summary>
-        <div class="table-responsive"><table class="table align-middle mb-0"><caption class="visually-hidden">Contour geometry in original image pixels</caption><thead><tr><th scope="col">ID</th><th scope="col">Area <small>px²</small></th><th scope="col">Perimeter <small>px</small></th><th scope="col">Centre <small>(X, Y)</small></th><th scope="col">Bounds <small>X, Y / W × H</small></th><th scope="col">Rotated box <small>W × H / centre</small></th><th scope="col">Angle <small>°</small></th><th scope="col">Aspect</th><th scope="col">Circularity</th><th scope="col">Solidity</th><th scope="col">Extent</th><th scope="col">Touches border</th></tr></thead><tbody id="measurements-body"><tr><td colspan="12" class="empty-table">No results yet.</td></tr></tbody></table></div>
+        <p class="small text-secondary px-3" id="analysis-note" hidden>These measurements belong to the previous photo. Process the current photo to replace them.</p>
+        <p id="contour-inspector" class="small bg-light rounded p-3 mx-3" role="status" hidden></p>
+        <p class="small text-secondary px-3">IDs are local to each result and reset after reprocessing; selection isolates both overlays and measurements. Closed trace area is not physical object area or evidence of a complete boundary. Angles follow the long axis clockwise from +X, modulo 180°; squares are ambiguous. Hierarchy links use zero-based extraction indices, including filtered traces.</p>
+        <div class="table-responsive"><table class="table align-middle mb-0"><caption class="visually-hidden">Contour geometry in original image pixels</caption><thead><tr><th scope="col">ID</th><th scope="col">Area <small>px²</small></th><th scope="col">Perimeter <small>px</small></th><th scope="col">Centre <small>(X, Y)</small></th><th scope="col">Bounds <small>X, Y / W × H</small></th><th scope="col">Rotated box <small>W × H / centre</small></th><th scope="col">Angle <small>°</small></th><th scope="col">Aspect</th><th scope="col">Circularity</th><th scope="col">Solidity</th><th scope="col">Extent</th><th scope="col">Touches border</th><th scope="col">Box area / contour fit</th><th scope="col">Trace / hierarchy</th><th scope="col">Approximation</th></tr></thead><tbody id="measurements-body"><tr><td colspan="15" class="empty-table">No results yet.</td></tr></tbody></table></div>
       </details>
       <noscript><div class="alert alert-warning mt-3">Enable JavaScript to process images.</div></noscript>
     </section>

@@ -24,7 +24,7 @@ class VisionHttpTests {
     private int port;
 
     @Test
-    void allFifteenMultipartPartsFitTheBoundedParserBudget() throws Exception {
+    void allNineteenMultipartPartsFitTheBoundedParserBudget() throws Exception {
         var fields = new LinkedHashMap<String, String>();
         fields.put("cannyLow", "50"); fields.put("cannyHigh", "150");
         fields.put("minContourArea", "100"); fields.put("blurKernel", "1");
@@ -33,6 +33,8 @@ class VisionHttpTests {
         fields.put("minSolidity", "0"); fields.put("excludeBoundary", "true");
         fields.put("processingMode", "SEGMENTATION"); fields.put("closeKernel", "1");
         fields.put("openKernel", "1"); fields.put("foreground", "BRIGHT");
+        fields.put("kernelShape", "RECTANGLE"); fields.put("retrievalMode", "TREE");
+        fields.put("chainMode", "NONE"); fields.put("approximationPercent", "2");
         String boundary = "VisionSyntheticBoundary";
         var body = new ByteArrayOutputStream();
         for (var field : fields.entrySet()) {
@@ -57,6 +59,8 @@ class VisionHttpTests {
             assertEquals(200, response.statusCode(), response.body());
             assertEquals("no-store", response.headers().firstValue("Cache-Control").orElseThrow());
             assertEquals("SEGMENTATION", JsonPath.read(response.body(), "$.parameters.boundary.mode"));
+            assertEquals("TREE", JsonPath.read(response.body(), "$.parameters.tracing.retrieval"));
+            assertEquals("RECTANGLE", JsonPath.read(response.body(), "$.parameters.boundary.shape"));
             assertEquals(1, (int) JsonPath.read(response.body(), "$.contourCount"));
             assertEquals(true, JsonPath.read(response.body(), "$.parameters.filters.excludeBoundary"));
         }

@@ -14,6 +14,10 @@ import org.opencv.core.CvException;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfByte;
 import org.opencv.core.MatOfPoint;
+import org.opencv.core.MatOfPoint2f;
+import za.co.vision.model.ContourOptions;
+import za.co.vision.model.ContourDiagnostics;
+import za.co.vision.model.ProcessingStage;
 import org.opencv.core.Size;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
@@ -28,7 +32,7 @@ import static za.co.vision.service.VisionException.Reason.*;
 /** Java-only, bounded, request-local OpenCV pipeline; stores no uploaded or output files. */
 @Service
 public class VisionProcessingService {
-    private record Candidate(MatOfPoint contour, ContourMeasurement measurement) { }
+    private record Candidate(int sourceIndex, MatOfPoint contour, ContourMeasurement measurement) { }
     private final VisionProperties properties;
     private final Semaphore processingSlots;
 
@@ -94,13 +98,15 @@ public class VisionProcessingService {
             Imgproc.GaussianBlur(gray, blurred,
                     new Size(parameters.blurKernel(), parameters.blurKernel()), 0);
             Imgproc.Canny(blurred, edges, parameters.cannyLow(), parameters.cannyHigh(), 3, true);
-            Mat contourInput = ContourBoundaries.extract(scope, blurred, edges, parameters.boundary());
+            var stages = ContourBoundaries.stages(scope, blurred, edges, parameters.boundary());
+            Mat contourInput = stages.active();
             int boundaryPixelCount = Core.countNonZero(contourInput);
             List<MatOfPoint> contours = new ArrayList<>();
             try {
-                // External-only retrieval avoids counting both sides of a closed Canny outline.
+                // Since OpenCV 3.2 findContours preserves its source; no full-resolution clone is needed.
                 Imgproc.findContours(contourInput, contours, hierarchy,
-                        Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                        parameters.tracing().retrieval() == ContourOptions.Retrieval.TREE ? Imgproc.RETR_TREE : Imgproc.RETR_EXTERNAL,
+                        parameters.tracing().chain() == ContourOptions.Chain.NONE ? Imgproc.CHAIN_APPROX_NONE : Imgproc.CHAIN_APPROX_SIMPLE);
             } finally {
                 contours.forEach(scope::own);
             }
@@ -108,8 +114,17 @@ public class VisionProcessingService {
                 throw new VisionException(TOO_COMPLEX,
                         "Too many contours. Increase blur or Canny thresholds, or crop the image and retry.");
             }
-            List<Candidate> candidates = contours.stream()
-                    .map(contour -> new Candidate(contour, ContourGeometry.measure(contour, 0, original.cols(), original.rows())))
+            // Bound dense chains before converting native points to Java arrays.
+            long pointCount = contours.stream().mapToLong(Mat::total).sum();
+            if (pointCount > 1_000_000) {
+                throw new VisionException(TOO_COMPLEX, "Too many boundary points. Use SIMPLE chains, increase blur or crop the image.");
+            }
+            List<Candidate> measured = new ArrayList<>();
+            for (int i = 0; i < contours.size(); i++) {
+                var contour = contours.get(i);
+                measured.add(new Candidate(i, contour, ContourGeometry.measure(contour, 0, original.cols(), original.rows())));
+            }
+            List<Candidate> candidates = measured.stream()
                     .filter(candidate -> parameters.filters().accepts(candidate.measurement(), parameters.minContourArea()))
                     .sorted(Comparator.comparingDouble((Candidate candidate) -> candidate.measurement().area())
                             .reversed().thenComparingInt(candidate -> candidate.measurement().boundingRectangle().y())
@@ -117,16 +132,54 @@ public class VisionProcessingService {
                     .toList();
             List<MatOfPoint> retained = candidates.stream().map(Candidate::contour).toList();
             List<ContourMeasurement> measurements = new ArrayList<>();
+            List<ContourDiagnostics> diagnostics = new ArrayList<>();
+            int approximationPoints = 0;
             for (int i = 0; i < retained.size(); i++) {
                 measurements.add(candidates.get(i).measurement().withId(i + 1));
+                var diagnostic = diagnose(candidates.get(i), hierarchy, i + 1, parameters.tracing());
+                diagnostics.add(diagnostic);
+                approximationPoints += diagnostic.approximationVertices();
+                if (approximationPoints > 100_000) {
+                    throw new VisionException(TOO_COMPLEX, "Too many approximation vertices. Increase epsilon, filter contours or crop the image.");
+                }
             }
             var previews = PreviewRenderer.render(original, edges, contourInput, retained, measurements,
                     properties.previewMaxDimension(), properties.previewJpegQuality());
+            var stagePreviews = List.of(
+                    new ProcessingStage("raw", "Raw Canny", PreviewRenderer.maskPreview(edges, previews.width(), previews.height()), Core.countNonZero(edges)),
+                    new ProcessingStage("closed", "Canny after closing · " + parameters.boundary().shape() + " " + parameters.boundary().closeKernel(),
+                            PreviewRenderer.maskPreview(stages.closed(), previews.width(), previews.height()), Core.countNonZero(stages.closed())),
+                    new ProcessingStage("opened", "Canny after closing + opening · " + parameters.boundary().shape() + " " + parameters.boundary().openKernel(),
+                            PreviewRenderer.maskPreview(stages.opened(), previews.width(), previews.height()), Core.countNonZero(stages.opened())));
             return new ProcessingResult(original.cols(), original.rows(), previews.width(), previews.height(),
                     retained.size(), contours.size(),
                     Core.countNonZero(edges), (System.nanoTime() - started) / 1_000_000.0,
                     parameters, previews.original(), previews.edges(), previews.contours(), previews.combined(),
-                    measurements, previews.drawings(), boundaryPixelCount, previews.mask());
+                    measurements, previews.drawings(), boundaryPixelCount, previews.mask(), stagePreviews, stages.source(), diagnostics);
+        }
+    }
+
+    private static ContourDiagnostics diagnose(Candidate candidate, Mat hierarchy, int id, ContourOptions options) {
+        int index = candidate.sourceIndex();
+        double[] links = hierarchy.get(0, index);
+        int depth = 0;
+        for (int parent = (int) links[3]; parent >= 0; parent = (int) hierarchy.get(0, parent)[3]) depth++;
+        var measurement = candidate.measurement();
+        double boxArea = measurement.rotatedRectangle().width() * measurement.rotatedRectangle().height();
+        try (MatScope scope = new MatScope()) {
+            MatOfPoint2f source = scope.own(new MatOfPoint2f(candidate.contour().toArray()));
+            MatOfPoint2f approximation = scope.own(new MatOfPoint2f());
+            double epsilon = options.approximationPercent() * measurement.perimeter() / 100;
+            Imgproc.approxPolyDP(source, approximation, epsilon, true);
+            StringBuilder path = new StringBuilder();
+            for (var point : approximation.toArray()) {
+                path.append(path.isEmpty() ? 'M' : 'L').append(Math.round(point.x)).append(' ').append(Math.round(point.y));
+            }
+            path.append('Z');
+            return new ContourDiagnostics(id, index, (int) links[0], (int) links[1], (int) links[2], (int) links[3],
+                    depth, depth % 2 != 0, (int) candidate.contour().total(), (int) approximation.total(), epsilon,
+                    Imgproc.contourArea(approximation), Imgproc.arcLength(approximation, true), boxArea,
+                    boxArea > 0 ? measurement.area() / boxArea : null, path.toString());
         }
     }
 

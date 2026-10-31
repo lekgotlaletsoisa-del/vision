@@ -8,8 +8,8 @@ import java.util.List;
  * @param height decoded image height, unchanged by processing
  * @param previewWidth displayed preview width, possibly smaller than the decoded image
  * @param previewHeight displayed preview height, possibly smaller than the decoded image
- * @param contourCount retained external contours
- * @param detectedContourCount all external contours in the active extraction mask before filtering
+ * @param contourCount retained contours in the selected retrieval mode
+ * @param detectedContourCount all contours in the active extraction mask before filtering
  * @param edgePixelCount nonzero pixels in the Canny edge image
  * @param processingMillis elapsed processing time including decoding and preview encoding
  * @param parameters actual controls used for this result
@@ -22,6 +22,9 @@ import java.util.List;
  * @param contourDrawings display-only contour paths generated in Java, in original coordinates
  * @param boundaryPixelCount nonzero pixels in the active extraction mask before filtering, at source resolution
  * @param boundaryMaskImage bounded, undilated binary extraction-mask preview as a PNG data URL
+ * @param stages raw, closed and opened Canny masks from this same processing request
+ * @param contourSource stage ID supplying contours, or segmentation for brightness regions
+ * @param contourDiagnostics hierarchy, approximation and rotated-box fit keyed by retained ID
  */
 public record ProcessingResult(int width, int height, int previewWidth, int previewHeight,
                                int contourCount, int detectedContourCount,
@@ -29,10 +32,14 @@ public record ProcessingResult(int width, int height, int previewWidth, int prev
                                ProcessingParameters parameters, String originalImage,
                                String edgesImage, String contoursImage, String overlayImage,
                                List<ContourMeasurement> contours, List<ContourDrawing> contourDrawings,
-                               int boundaryPixelCount, String boundaryMaskImage) {
+                               int boundaryPixelCount, String boundaryMaskImage,
+                               List<ProcessingStage> stages, String contourSource,
+                               List<ContourDiagnostics> contourDiagnostics) {
     /** Makes the geometry collection immutable. */
     public ProcessingResult {
         contours = List.copyOf(contours);
         contourDrawings = List.copyOf(contourDrawings);
+        stages = List.copyOf(stages);
+        contourDiagnostics = List.copyOf(contourDiagnostics);
     }
 }

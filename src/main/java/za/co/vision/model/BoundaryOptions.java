@@ -4,15 +4,36 @@ package za.co.vision.model;
  * Explicit experiments for the source-resolution mask supplied to contour extraction.
  * Canny is always computed independently for the raw edge preview and edge-pixel count.
  * @param mode CANNY by default; experiments must be explicitly selected
- * @param closeKernel odd elliptical closing kernel side in source pixels, 1–15; 1 disables closing
- * @param openKernel odd elliptical opening kernel side in source pixels, 1–15; 1 disables opening
+ * @param closeKernel odd closing kernel side in source pixels, 1–15; 1 disables closing
+ * @param openKernel odd opening kernel side in source pixels, 1–15; 1 disables opening
  * @param foreground brightness polarity for segmentation; ignored by edge modes
+ * @param shape structuring element used for both operations; defaults to ellipse
  */
-public record BoundaryOptions(Mode mode, int closeKernel, int openKernel, Foreground foreground) {
+public record BoundaryOptions(Mode mode, int closeKernel, int openKernel, Foreground foreground, Shape shape) {
+    /**
+     * Preserves the original elliptical experiment constructor.
+     * @param mode extraction mode
+     * @param closeKernel odd closing side in source pixels
+     * @param openKernel odd opening side in source pixels
+     * @param foreground segmentation polarity
+     */
+    public BoundaryOptions(Mode mode, int closeKernel, int openKernel, Foreground foreground) {
+        this(mode, closeKernel, openKernel, foreground, Shape.ELLIPSE);
+    }
+
+    /** Footprint of each morphology kernel. */
+    public enum Shape {
+        /** Full rectangular footprint, including corners. */
+        RECTANGLE,
+        /** Rounded footprint; discretization matters for small kernels. */
+        ELLIPSE
+    }
     /** Source of the contour extraction mask; none is an object recognizer. */
     public enum Mode {
         /** Original Canny mask, without morphology. */
         CANNY,
+        /** Canny after closing only, before optional opening. */
+        CANNY_CLOSED,
         /** Experimental Canny closing followed by optional opening; may merge/remove edges. */
         MORPHOLOGY,
         /** Separate experimental Otsu brightness-region segmentation followed by morphology. */
@@ -34,6 +55,7 @@ public record BoundaryOptions(Mode mode, int closeKernel, int openKernel, Foregr
     public BoundaryOptions {
         mode = mode == null ? Mode.CANNY : mode;
         foreground = foreground == null ? Foreground.BRIGHT : foreground;
+        shape = shape == null ? Shape.ELLIPSE : shape;
         if (closeKernel < 1 || closeKernel > 15 || closeKernel % 2 == 0
                 || openKernel < 1 || openKernel > 15 || openKernel % 2 == 0) {
             throw new IllegalArgumentException("Morphology kernels must be odd integers from 1 to 15.");
